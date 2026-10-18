@@ -1,5 +1,5 @@
-// Prototype Gallery — lock screen, game grid, and a phone-frame player.
-// Hash routes: #/ (gallery) and #/play/<slug>.
+// NOC Game — Prototype Gallery
+// Routes: #/ (giới thiệu) · #/hub · #/wishlist · #/play/<slug>
 import {
   CHECK_TEXT, decryptBytes, decryptText, deriveKey, exportRawKey, fromB64, importRawKey,
   injectFirst, storageShim, toB64,
@@ -38,6 +38,13 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7z"/>',
+  dice: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  gamepad: '<rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4M15 12h.01M18 11h.01"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -61,6 +68,7 @@ function h(tag, attrs = {}, children = []) {
   for (const c of [].concat(children)) if (c !== null && c !== undefined && c !== false) el.append(c);
   return el;
 }
+const btn = (label, iconName, attrs = {}) => h('button', { class: 'btn', type: 'button', ...attrs, html: `${iconName ? icon(iconName) : ''}${label ? `<span>${label}</span>` : ''}` });
 
 function hueOf(text) {
   let x = 2166136261;
@@ -85,6 +93,7 @@ function formatDate(iso) {
   if (days > 1 && days < 7) return `${days} ngày trước`;
   return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
+const shortDate = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
 let toastTimer = 0;
 function toast(message) {
@@ -111,11 +120,31 @@ async function copyText(text) {
   }
 }
 
+// ------------------------------------------------------------------ user (nickname) + wishlist
+
+const nick = {
+  get() { return (local.get('pg:nick') || session.get('pg:nick') || '').trim(); },
+  set(v, remember) { (remember ? local : session).set('pg:nick', v); },
+  clear() { local.del('pg:nick'); session.del('pg:nick'); },
+};
+const wish = {
+  all() { try { const a = JSON.parse(local.get('pg:wish') || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } },
+  has(slug) { return wish.all().includes(slug); },
+  toggle(slug) {
+    const a = wish.all();
+    const on = !a.includes(slug);
+    local.set('pg:wish', JSON.stringify(on ? [...a, slug] : a.filter((s) => s !== slug)));
+    return on;
+  },
+};
+
 // ------------------------------------------------------------------ data + crypto
 
 let site = null;
 let key = null;
 let catalog = [];
+let team = {};
+let featured = [];
 const thumbUrls = new Map();
 
 const bust = () => (site && site.builtAt ? `?v=${encodeURIComponent(site.builtAt)}` : '');
@@ -157,6 +186,7 @@ function forgetKey() {
     session.del(keySlot());
     local.del(keySlot());
   }
+  nick.clear();
   key = null;
   catalog = [];
   for (const url of thumbUrls.values()) URL.revokeObjectURL(url);
@@ -167,11 +197,30 @@ async function loadCatalog() {
   const bytes = await openBytes(await fetchBytes('data/catalog.bin'));
   const data = JSON.parse(textDecoder.decode(bytes));
   catalog = Array.isArray(data.games) ? data.games : [];
+  team = data.team && typeof data.team === 'object' ? data.team : {};
+  featured = Array.isArray(data.featured) ? data.featured : [];
 }
+
+/** Decrypted object URL for an encrypted file (game art or team photo). */
+async function loadFile(file, type) {
+  if (!file) return null;
+  if (thumbUrls.has(file)) return thumbUrls.get(file);
+  try {
+    const bytes = await openBytes(await fetchBytes(file));
+    const url = URL.createObjectURL(new Blob([bytes], { type: type || 'image/png' }));
+    thumbUrls.set(file, url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+const loadArt = (g, kind) => loadFile(g[kind], g[kind + 'Type']);
+/** Best square-ish art for a tile: icon → thumb → banner. */
+const tileKind = (g) => (g.icon ? 'icon' : g.thumb ? 'thumb' : g.banner ? 'banner' : null);
 
 // ------------------------------------------------------------------ boot + routing
 
-let view = null; // { name: 'gallery'|'player', destroy?() }
+let view = null; // { name, destroy?() }
 
 async function boot() {
   try {
@@ -183,12 +232,16 @@ async function boot() {
     return;
   }
   document.title = site.title;
+  if (site.logo) document.querySelector('link[rel=icon]')?.setAttribute('href', site.logo);
   if (site.locked) {
     const restored = await restoreKey();
-    if (restored !== 'ok') {
-      showLock(restored === 'stale' ? 'Mật khẩu đã được đổi. Nhập mật khẩu mới.' : '');
+    if (restored !== 'ok' || !nick.get()) {
+      showLock(restored === 'stale' ? 'Mật khẩu team đã được đổi. Nhập mật khẩu mới.' : '');
       return;
     }
+  } else if (!nick.get()) {
+    showLock('');
+    return;
   }
   await enter();
 }
@@ -208,21 +261,24 @@ function setView(next) {
   view = next;
 }
 
-let galleryScroll = 0;
+const scrollMemory = {};
 function route() {
-  const m = location.hash.match(/^#\/play\/([a-z0-9][a-z0-9-]*)/);
+  const hash = location.hash || '#/';
+  const m = hash.match(/^#\/play\/([a-z0-9][a-z0-9-]*)/);
   if (m) {
     const game = catalog.find((g) => g.slug === m[1]);
     if (game) { openPlayer(game); return; }
     toast('Không tìm thấy game này — có thể đã bị xoá.');
-    history.replaceState(null, '', '#/');
+    history.replaceState(null, '', '#/hub');
   }
-  showGallery();
+  if (hash.startsWith('#/hub')) showHub('hub');
+  else if (hash.startsWith('#/wishlist')) showHub('wishlist');
+  else showHome();
 }
 
 window.addEventListener('hashchange', () => {
-  if (!site || (site.locked && !key)) return;
-  if (view && view.name === 'gallery') galleryScroll = window.scrollY;
+  if (!site || (site.locked && !key) || !nick.get()) return;
+  if (view && view.scrollKey) scrollMemory[view.scrollKey] = window.scrollY;
   route();
 });
 
@@ -235,16 +291,20 @@ function fatal(title, detail) {
   ])));
 }
 
-// ------------------------------------------------------------------ lock screen
+const logoSrc = () => site.logo || 'icon.svg';
+
+// ------------------------------------------------------------------ lock screen (nickname + team password)
 
 function showLock(note = '') {
   setView({ name: 'lock' });
-  const input = h('input', { class: 'input', id: 'pw', type: 'password', autocomplete: 'current-password', placeholder: 'Mật khẩu của team', required: true, 'aria-label': 'Mật khẩu' });
+  const nameInput = h('input', { class: 'input', id: 'nick', type: 'text', autocomplete: 'nickname', placeholder: 'VD: Mèo Ú', maxlength: 32, required: true, value: nick.get() });
+  const pwInput = site.locked ? h('input', { class: 'input', id: 'pw', type: 'password', autocomplete: 'current-password', placeholder: 'Mật khẩu chung của team', required: true }) : null;
   const remember = h('input', { type: 'checkbox', id: 'remember', checked: local.get('pg:remember') !== '0' });
   const error = h('p', { class: 'lock-error', role: 'alert', text: note });
-  const submit = h('button', { class: 'btn primary', type: 'submit', text: 'Mở khoá' });
+  const submit = h('button', { class: 'btn primary lg', type: 'submit', text: 'Vào Game Hub' });
   const form = h('form', { class: 'lock-form', onsubmit: unlock }, [
-    input,
+    h('label', { class: 'field', for: 'nick' }, [h('span', { text: 'Tên / biệt danh' }), nameInput]),
+    pwInput ? h('label', { class: 'field', for: 'pw' }, [h('span', { text: 'Mật khẩu team' }), pwInput]) : null,
     h('label', { class: 'check', for: 'remember' }, [remember, 'Ghi nhớ trên máy này']),
     submit,
     error,
@@ -252,97 +312,209 @@ function showLock(note = '') {
 
   async function unlock(e) {
     e.preventDefault();
-    const pw = input.value;
-    if (!pw) return;
+    const name = nameInput.value.trim();
+    if (!name) { error.textContent = 'Nhập tên hoặc biệt danh để mọi người biết ai đang chơi.'; nameInput.focus(); return; }
+    local.set('pg:remember', remember.checked ? '1' : '0');
+    if (!site.locked) { nick.set(name, remember.checked); await enter(); return; }
+    const pw = pwInput.value;
+    if (!pw) { pwInput.focus(); return; }
     submit.disabled = true;
     submit.textContent = 'Đang mở khoá…';
     error.textContent = '';
     try {
       const candidate = await deriveKey(pw, fromB64(site.kdf.salt), site.kdf.iterations, true);
       if (!(await keyWorks(candidate))) {
-        error.textContent = 'Sai mật khẩu. Hỏi lại người quản lý gallery nếu bạn chưa có.';
-        input.select();
+        error.textContent = 'Sai mật khẩu. Hỏi lại trưởng team nếu bạn chưa có.';
+        pwInput.select();
         return;
       }
       key = candidate;
       const raw = toB64(await exportRawKey(candidate));
-      local.set('pg:remember', remember.checked ? '1' : '0');
       if (remember.checked) local.set(keySlot(), raw);
       else session.set(keySlot(), raw);
+      nick.set(name, remember.checked);
       await enter();
     } catch (err) {
       error.textContent = `Không mở khoá được: ${err.message || err}`;
     } finally {
       submit.disabled = false;
-      submit.textContent = 'Mở khoá';
+      submit.textContent = 'Vào Game Hub';
     }
   }
 
   app.replaceChildren(h('main', { class: 'lock' }, h('div', { class: 'lock-card' }, [
-    h('img', { class: 'lock-mark', src: 'icon.svg', alt: '' }),
-    h('div', {}, [
+    h('img', { class: 'lock-mark', src: logoSrc(), alt: '' }),
+    h('div', { class: 'lock-head' }, [
       h('h1', { text: site.title }),
-      h('p', { text: site.subtitle || 'Nhập mật khẩu chung để xem và chơi các prototype.' }),
+      h('p', { text: site.subtitle || 'Nhập tên và mật khẩu chung của team để chơi các prototype.' }),
     ]),
     form,
   ])));
-  input.focus();
+  (nameInput.value ? pwInput || nameInput : nameInput).focus();
 }
 
-// ------------------------------------------------------------------ gallery
+// ------------------------------------------------------------------ shared header
 
-const filters = { q: '', status: '', tag: '', sort: 'updated' };
+function header(active) {
+  const name = nick.get() || 'Khách';
+  const wishCount = wish.all().filter((s) => catalog.some((g) => g.slug === s)).length;
+  const tab = (id, label, href) => h('a', { class: 'seg-item', href, 'aria-current': active === id ? 'page' : null, text: label });
+  return h('header', { class: 'top' }, h('div', { class: 'wrap top-row' }, [
+    h('a', { class: 'brand', href: '#/' }, [
+      h('img', { src: logoSrc(), alt: '' }),
+      h('div', { class: 'brand-text' }, [h('h1', { text: site.title }), site.subtitle ? h('p', { text: site.subtitle }) : null]),
+    ]),
+    h('nav', { class: 'seg', 'aria-label': 'Điều hướng' }, [
+      tab('home', 'Giới thiệu', '#/'),
+      tab('hub', 'Game Hub', '#/hub'),
+      tab('wishlist', wishCount ? `Wishlist · ${wishCount}` : 'Wishlist', '#/wishlist'),
+    ]),
+    h('span', { class: 'spacer' }),
+    h('div', { class: 'user' }, [
+      h('span', { class: 'avatar', style: { '--h': String(hueOf(name)) }, text: (name.split(/\s+/).pop()[0] || '?').toUpperCase() }),
+      h('div', { class: 'user-text' }, [h('strong', { text: name }), h('span', { text: `${catalog.length} game` })]),
+      h('button', {
+        class: 'btn icon ghost', type: 'button', title: 'Đăng xuất trên máy này', 'aria-label': 'Đăng xuất', html: icon('logout'),
+        onclick: () => { forgetKey(); showLock(); },
+      }),
+    ]),
+  ]));
+}
 
-function showGallery() {
+// ------------------------------------------------------------------ tiles
+
+let tileObserver = null;
+function observeTiles() {
+  if (tileObserver) tileObserver.disconnect();
+  tileObserver = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      tileObserver.unobserve(entry.target);
+      fillTile(entry.target);
+    }
+  }, { rootMargin: '300px' }) : null;
+  return tileObserver;
+}
+
+function fillTile(el) {
+  const g = catalog.find((x) => x.slug === el.dataset.slug);
+  const kind = g && tileKind(g);
+  if (!kind) return;
+  loadArt(g, kind).then((url) => {
+    if (!url || el.querySelector('img')) return;
+    el.prepend(h('img', { src: url, alt: '', decoding: 'async' }));
+    const gen = el.querySelector('.gen');
+    if (gen) gen.remove();
+  });
+}
+
+function tile(g, big = false) {
+  const el = h('a', { class: 'tile' + (big ? ' big' : ''), href: `#/play/${g.slug}`, 'data-slug': g.slug, 'aria-label': `Chơi ${g.title}`, title: g.title }, [
+    h('span', { class: 'gen', style: { '--h': String(hueOf(g.slug)) } }, h('span', { text: (g.title.trim()[0] || '?').toUpperCase() })),
+    wish.has(g.slug) ? h('span', { class: 'wished', html: icon('heart'), 'aria-label': 'Trong wishlist' }) : null,
+    g.orientation === 'landscape' ? h('span', { class: 'orient', text: 'NGANG' }) : null,
+    h('span', { class: 'tile-name', text: g.title }),
+    h('span', { class: 'play', html: icon('play') }),
+  ]);
+  if (tileKind(g)) {
+    const url = thumbUrls.get(g[tileKind(g)]);
+    if (url) { el.prepend(h('img', { src: url, alt: '' })); el.querySelector('.gen').remove(); }
+    else if (tileObserver) tileObserver.observe(el);
+    else fillTile(el);
+  }
+  return el;
+}
+
+function randomGame(exceptSlug) {
+  const pool = catalog.filter((g) => g.slug !== exceptSlug && g.status !== 'archived');
+  const list = pool.length ? pool : catalog.filter((g) => g.slug !== exceptSlug);
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// ------------------------------------------------------------------ home (giới thiệu)
+
+function showHome() {
+  observeTiles();
+  const photo = h('div', { class: 'team-photo' + (team.photo ? '' : ' empty') }, team.photo ? [] : [
+    h('span', { html: icon('users') }),
+    h('strong', { text: 'Ảnh team' }),
+    h('span', { text: 'Admin: thêm file brand/team.jpg vào repo' }),
+  ]);
+  if (team.photo) loadFile(team.photo, team.photoType).then((url) => url && photo.append(h('img', { src: url, alt: `Ảnh team ${site.title}` })));
+  const recent = [...catalog].filter((g) => g.status !== 'archived').sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).slice(0, 10);
+  const pick = randomGame();
+
+  app.replaceChildren(header('home'), h('main', { class: 'wrap home' }, [
+    h('section', { class: 'hero' }, [
+      h('div', { class: 'hero-text' }, [
+        h('span', { class: 'eyebrow', text: team.eyebrow || 'Team prototype · nội bộ' }),
+        h('h2', { class: 'hero-title', text: team.name || site.title }),
+        h('p', { class: 'hero-intro', text: team.intro || site.subtitle || '' }),
+        h('div', { class: 'hero-actions' }, [
+          h('a', { class: 'btn primary lg', href: '#/hub', html: `${icon('gamepad')}<span>Vào Game Hub</span>` }),
+          pick ? h('a', { class: 'btn lg', href: `#/play/${pick.slug}`, html: `${icon('dice')}<span>Chơi ngẫu nhiên</span>` }) : null,
+        ]),
+        Array.isArray(team.stats) && team.stats.length ? h('dl', { class: 'hero-stats' }, team.stats.slice(0, 4).flatMap((s) => [h('dt', { text: String(s.value) }), h('dd', { text: String(s.label) })])) : null,
+      ]),
+      photo,
+    ]),
+    recent.length ? h('section', { class: 'home-hub' }, [
+      h('div', { class: 'section-head' }, [
+        h('h2', { text: 'Mới cập nhật' }), h('span', { class: 'count', text: `${catalog.length} game` }), h('span', { class: 'spacer' }),
+        h('a', { class: 'btn ghost', href: '#/hub', html: `<span>Xem tất cả</span>${icon('arrow')}` }),
+      ]),
+      h('div', { class: 'mosaic row' }, recent.map((g) => tile(g))),
+    ]) : emptyState(),
+  ]));
+  requestAnimationFrame(() => window.scrollTo(0, scrollMemory.home || 0));
+  setView({ name: 'home', scrollKey: 'home', destroy() { if (tileObserver) tileObserver.disconnect(); } });
+}
+
+// ------------------------------------------------------------------ game hub
+
+const filters = { q: '', status: '', tag: '', sort: 'featured' };
+
+function showHub(mode) {
+  observeTiles();
   const searchInput = h('input', {
-    class: 'input', id: 'search', type: 'search', placeholder: 'Tìm theo tên, người làm, mô tả…', value: filters.q, 'aria-label': 'Tìm game',
+    class: 'input', id: 'search', type: 'search', placeholder: 'Tìm theo tên game, người làm, nhãn…', value: filters.q, 'aria-label': 'Tìm game',
     oninput: (e) => { filters.q = e.target.value; update(); },
   });
-  const filterRow = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Lọc' });
-  const summary = h('div', { class: 'summary' });
-  const grid = h('div', { class: 'grid' });
-  const observer = 'IntersectionObserver' in window ? new IntersectionObserver(onCoverVisible, { rootMargin: '200px' }) : null;
+  const sort = h('select', { class: 'sort-select', id: 'sort', 'aria-label': 'Sắp xếp', onchange: (e) => { filters.sort = e.target.value; update(); } }, [
+    ['featured', 'Đề xuất'], ['updated', 'Mới cập nhật'], ['created', 'Mới thêm'], ['title', 'Tên A → Z'],
+  ].map(([v, t]) => h('option', { value: v, text: t, selected: filters.sort === v })));
+  const chips = h('div', { class: 'filters', role: 'toolbar', 'aria-label': 'Lọc' });
+  const title = h('h2', { text: mode === 'wishlist' ? 'Wishlist của bạn' : 'Tất cả game' });
+  const count = h('span', { class: 'count' });
+  const grid = h('div', { class: 'mosaic' });
 
-  const header = h('header', { class: 'top' }, h('div', { class: 'wrap' }, [
-    h('div', { class: 'top-row' }, [
-      h('div', { class: 'brand' }, [
-        h('img', { src: 'icon.svg', alt: '' }),
-        h('div', { class: 'brand-text' }, [h('h1', { text: site.title }), site.subtitle ? h('p', { text: site.subtitle }) : null]),
-      ]),
+  app.replaceChildren(header(mode), h('main', { class: 'wrap hub' }, [
+    h('div', { class: 'hub-tools' }, [
       h('label', { class: 'search' }, [h('span', { html: icon('search') }), searchInput]),
-      site.locked ? h('button', {
-        class: 'btn ghost', title: 'Khoá lại trên máy này', html: `${icon('lock')}<span>Khoá</span>`,
-        onclick: () => { forgetKey(); showLock(); },
-      }) : null,
+      h('label', { class: 'sort' }, [h('span', { text: 'Sắp xếp' }), sort, h('span', { html: icon('chevron') })]),
     ]),
-    filterRow,
+    h('div', { class: 'section-head' }, [title, count, h('span', { class: 'spacer' }), chips]),
+    grid,
   ]));
 
-  app.replaceChildren(header, h('main', { class: 'wrap' }, [summary, grid]));
-
   function chip(label, pressed, onclick) {
-    return h('button', { class: 'chip', 'aria-pressed': pressed ? 'true' : 'false', text: label, onclick });
+    return h('button', { class: 'chip', type: 'button', 'aria-pressed': pressed ? 'true' : 'false', text: label, onclick });
   }
 
   function renderFilters() {
     const statuses = Object.keys(STATUS_LABEL).filter((s) => catalog.some((g) => g.status === s));
     const tagCount = new Map();
     for (const g of catalog) for (const t of g.tags || []) tagCount.set(t, (tagCount.get(t) || 0) + 1);
-    const tags = [...tagCount.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+    const tags = [...tagCount.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8).map(([t]) => t);
     const items = [chip('Tất cả', !filters.status && !filters.tag, () => { filters.status = ''; filters.tag = ''; update(); })];
     for (const s of statuses) items.push(chip(STATUS_LABEL[s], filters.status === s, () => { filters.status = filters.status === s ? '' : s; update(); }));
     if (tags.length) items.push(h('span', { class: 'sep', 'aria-hidden': 'true' }));
     for (const t of tags) items.push(chip('#' + t, filters.tag === t, () => { filters.tag = filters.tag === t ? '' : t; update(); }));
-    const sort = h('select', { class: 'input', id: 'sort', 'aria-label': 'Sắp xếp', onchange: (e) => { filters.sort = e.target.value; update(); } }, [
-      h('option', { value: 'updated', text: 'Mới cập nhật', selected: filters.sort === 'updated' }),
-      h('option', { value: 'created', text: 'Mới thêm', selected: filters.sort === 'created' }),
-      h('option', { value: 'title', text: 'Tên A → Z', selected: filters.sort === 'title' }),
-    ]);
-    items.push(sort);
-    filterRow.replaceChildren(...items);
+    chips.replaceChildren(...items);
   }
 
   function matches(g) {
+    if (mode === 'wishlist' && !wish.has(g.slug)) return false;
     if (filters.status && g.status !== filters.status) return false;
     if (filters.tag && !(g.tags || []).includes(filters.tag)) return false;
     const q = filters.q.trim().toLowerCase().normalize('NFC');
@@ -354,71 +526,28 @@ function showGallery() {
 
   function update() {
     renderFilters();
+    const rank = (g) => { const i = featured.indexOf(g.slug); return i < 0 ? 1e6 : i; };
     const list = catalog.filter(matches).sort((a, b) => {
       if (filters.sort === 'title') return a.title.localeCompare(b.title, 'vi');
+      if (filters.sort === 'featured') return rank(a) - rank(b) || (b.updated || '').localeCompare(a.updated || '') || a.title.localeCompare(b.title, 'vi');
       const k = filters.sort === 'created' ? 'created' : 'updated';
       return (b[k] || '').localeCompare(a[k] || '') || a.title.localeCompare(b.title, 'vi');
     });
-    if (observer) observer.disconnect();
+    if (tileObserver) tileObserver.disconnect();
     document.querySelectorAll('.empty').forEach((e) => e.remove());
-    if (!catalog.length) {
-      summary.replaceChildren();
-      grid.replaceChildren();
-      grid.after(emptyState());
-      return;
-    }
-    const newest = catalog.reduce((m, g) => ((g.updated || '') > m ? g.updated : m), '');
-    summary.replaceChildren(
-      h('strong', { text: list.length === catalog.length ? `${catalog.length} game` : `${list.length} / ${catalog.length} game` }),
-      h('span', { text: newest ? `· cập nhật gần nhất ${formatDate(newest)}` : '' }),
-    );
-    grid.replaceChildren(...list.map(card));
-    if (!list.length) grid.append(h('p', { class: 'card-sub', text: 'Không có game nào khớp bộ lọc.' }));
-  }
-
-  function card(g) {
-    const cover = h('div', { class: 'cover', 'data-slug': g.slug }, [
-      h('div', { class: 'gen', style: { '--h': String(hueOf(g.slug)) } }, h('span', { text: (g.title.trim()[0] || '?').toUpperCase() })),
-      g.orientation === 'landscape' ? h('span', { class: 'orient', text: 'NGANG' }) : null,
-      h('span', { class: 'play', html: icon('play') }),
-    ]);
-    const coverKind = g.thumb ? 'thumb' : g.banner ? 'banner' : null;
-    if (coverKind) {
-      if (thumbUrls.has(g[coverKind])) setCover(cover, thumbUrls.get(g[coverKind]), coverKind);
-      else if (observer) observer.observe(cover);
-      else loadArt(g, coverKind).then((url) => url && setCover(cover, url, coverKind));
-    }
-    const appIcon = g.icon ? h('span', { class: 'app-icon', 'aria-hidden': 'true' }) : null;
-    if (appIcon) loadArt(g, 'icon').then((url) => url && appIcon.append(h('img', { src: url, alt: '' })));
-    const sub = [g.author, formatDate(g.updated)].filter(Boolean).join(' · ');
-    return h('a', { class: 'card', href: `#/play/${g.slug}`, 'aria-label': `Chơi ${g.title}` }, [
-      cover,
-      h('div', { class: 'card-meta' }, [
-        h('div', { class: 'card-title' }, [
-          appIcon,
-          h('h3', { text: g.title }),
-          g.status ? h('span', { class: `status ${g.status}`, text: STATUS_LABEL[g.status] || g.status }) : null,
-        ]),
-        sub ? h('div', { class: 'card-sub', text: sub }) : null,
-        g.tags && g.tags.length ? h('div', { class: 'card-tags' }, g.tags.slice(0, 4).map((t) => h('span', { class: 'tag', text: t }))) : null,
-      ]),
-    ]);
-  }
-
-  function onCoverVisible(entries) {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      observer.unobserve(entry.target);
-      const g = catalog.find((x) => x.slug === entry.target.dataset.slug);
-      const kind = g && (g.thumb ? 'thumb' : g.banner ? 'banner' : null);
-      if (kind) loadArt(g, kind).then((url) => url && setCover(entry.target, url, kind));
+    const total = mode === 'wishlist' ? catalog.filter((g) => wish.has(g.slug)).length : catalog.length;
+    count.textContent = list.length === total ? `${total} game` : `${list.length} / ${total} game`;
+    if (!catalog.length) { grid.replaceChildren(); grid.after(emptyState()); return; }
+    const plain = Boolean(filters.q || filters.status || filters.tag) || filters.sort !== 'featured';
+    grid.replaceChildren(...list.map((g) => tile(g, !plain && featured.includes(g.slug))));
+    if (!list.length) {
+      grid.append(h('p', { class: 'no-match', text: mode === 'wishlist' && !total ? 'Wishlist đang trống — bấm “Thêm vào wishlist” khi chơi một game.' : 'Không có game nào khớp bộ lọc.' }));
     }
   }
 
   update();
-  requestAnimationFrame(() => window.scrollTo(0, galleryScroll));
-
-  setView({ name: 'gallery', destroy() { if (observer) observer.disconnect(); } });
+  requestAnimationFrame(() => window.scrollTo(0, scrollMemory[mode] || 0));
+  setView({ name: mode, scrollKey: mode, destroy() { if (tileObserver) tileObserver.disconnect(); } });
 }
 
 function emptyState() {
@@ -428,30 +557,6 @@ function emptyState() {
     h('pre', { text: 'npm run submit -- ../ten-game --push' }),
     h('p', { text: 'Hoặc trên github.com: Add file → Upload files, kéo file dist/index.html vào thư mục games/ten-game/. Xem README để biết thêm.' }),
   ]);
-}
-
-/** Decrypted object URL for one of a game's images: kind = thumb | icon | banner. */
-async function loadArt(g, kind) {
-  const file = g[kind];
-  if (!file) return null;
-  if (thumbUrls.has(file)) return thumbUrls.get(file);
-  try {
-    const bytes = await openBytes(await fetchBytes(file));
-    const url = URL.createObjectURL(new Blob([bytes], { type: g[kind + 'Type'] || 'image/png' }));
-    thumbUrls.set(file, url);
-    return url;
-  } catch {
-    return null;
-  }
-}
-
-function setCover(cover, url, kind = 'thumb') {
-  if (cover.querySelector('img')) return;
-  // A 2:1 banner in a 9:16 card: show it whole over a blurred, zoomed copy of itself.
-  if (kind === 'banner') cover.prepend(h('img', { class: 'backdrop', src: url, alt: '' }), h('img', { class: 'banner', src: url, alt: '', decoding: 'async' }));
-  else cover.prepend(h('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }));
-  const gen = cover.querySelector('.gen');
-  if (gen) gen.remove();
 }
 
 // ------------------------------------------------------------------ player
@@ -471,19 +576,20 @@ function openPlayer(game) {
   const st = {
     deviceId: compact ? FILL_ID : (prefs.device && DEVICES.some((d) => d.id === prefs.device) ? prefs.device : (game.device && DEVICES.some((d) => d.id === game.device) ? game.device : site.defaultDevice || DEFAULT_DEVICE_ID)),
     custom: prefs.custom && parseSize(`${prefs.custom.width}x${prefs.custom.height}`) ? prefs.custom : { width: 360, height: 640 },
+    zoom: ['fit', '75', '50'].includes(prefs.zoom) ? prefs.zoom : 'fit',
     landscape: game.orientation === 'landscape',
     safe: Boolean(prefs.safe),
-    rail: compact ? false : prefs.rail !== false,
+    rail: compact ? false : prefs.rail === true,
     levels: null,
     events: [],
     url: null,
-    loading: false,
+    started: false,
   };
   const saveSlot = `pg:save:${game.slug}`;
   const levelSlot = `pg:level:${game.slug}`;
   const device = () => (st.deviceId === CUSTOM_ID ? { ...deviceById(CUSTOM_ID), ...st.custom } : deviceById(st.deviceId));
 
-  // ---- DOM
+  // ---- DOM: stage
   const iframe = h('iframe', {
     title: game.title,
     sandbox: 'allow-scripts allow-pointer-lock allow-popups allow-modals allow-forms allow-downloads',
@@ -493,41 +599,84 @@ function openPlayer(game) {
   const cutout = h('div', { class: 'cutout', 'aria-hidden': 'true' });
   const safeBands = ['top', 'right', 'bottom', 'left'].map((side) => h('div', { class: `safe ${side}`, 'aria-hidden': 'true' }));
   const overlay = h('div', { class: 'overlay' });
-  const screen = h('div', { class: 'screen' }, [iframe, cutout, ...safeBands, overlay]);
+  const splashIcon = h('span', { class: 'splash-icon', style: { '--h': String(hueOf(game.slug)) } }, h('span', { text: (game.title.trim()[0] || '?').toUpperCase() }));
+  const splash = h('div', { class: 'splash', style: { '--h': String(hueOf(game.slug)) } }, [
+    splashIcon,
+    h('strong', { text: game.title }),
+    h('button', { class: 'play-disc', type: 'button', 'aria-label': `Bắt đầu chơi ${game.title}`, html: icon('play'), onclick: () => loadGame() }),
+    h('span', { text: 'Bấm để bắt đầu chơi' }),
+  ]);
+  const screen = h('div', { class: 'screen' }, [iframe, cutout, ...safeBands, overlay, splash]);
   const frame = h('div', { class: 'frame' }, screen);
   const rotateHint = h('div', { class: 'rotate-hint', text: 'Xoay ngang điện thoại để chơi game này', hidden: true });
+  const stageArt = h('div', { class: 'stage-art', 'aria-hidden': 'true', style: { '--h': String(hueOf(game.slug)) } });
   const stageInner = h('div', { class: 'stage-inner' }, frame);
-  const stage = h('div', { class: 'stage' }, [stageInner, rotateHint]);
+  const stage = h('div', { class: 'stage' }, [stageArt, stageInner, rotateHint]);
+  const art = tileKind(game);
+  if (art) loadArt(game, art).then((url) => { if (!url) return; stageArt.append(h('img', { src: url, alt: '' })); });
+  if (game.icon) loadArt(game, 'icon').then((url) => { if (url) splashIcon.replaceChildren(h('img', { src: url, alt: '' })); });
 
+  // ---- DOM: toolbar
   const levelSelect = h('select', { class: 'input', id: 'level', 'aria-label': 'Chọn level', hidden: true, onchange: (e) => gotoLevel(Number(e.target.value)) });
-  const deviceBtn = h('button', { class: 'btn device-btn', 'aria-haspopup': 'listbox', onclick: () => toggleDeviceMenu() });
-  const rotateBtn = h('button', { class: 'btn icon', title: 'Xoay (R)', 'aria-label': 'Xoay ngang/dọc', html: icon('rotate'), onclick: () => rotate() });
-  const safeBtn = h('button', { class: 'btn icon', title: 'Hiện vùng an toàn (tai thỏ, Dynamic Island, thanh Home)', 'aria-label': 'Vùng an toàn', html: icon('safe'), onclick: () => { st.safe = !st.safe; writePrefs({ safe: st.safe }); layout(); } });
-  const reloadBtn = h('button', { class: 'btn icon', title: 'Tải lại game', 'aria-label': 'Tải lại game', html: icon('reload'), onclick: () => loadGame() });
-  const fullBtn = h('button', { class: 'btn icon', title: 'Toàn màn hình', 'aria-label': 'Toàn màn hình', html: icon('full'), hidden: !document.fullscreenEnabled, onclick: () => stage.requestFullscreen().catch(() => toast('Trình duyệt không cho bật toàn màn hình.')) });
-  const qrBtn = h('button', { class: 'btn icon', title: 'Mở trên điện thoại', 'aria-label': 'Mã QR để mở trên điện thoại', html: icon('qr'), onclick: () => toggleQr() });
-  const railBtn = h('button', { class: 'btn icon', title: 'Thông tin game', 'aria-label': 'Thông tin game', html: icon('info'), onclick: () => { st.rail = !st.rail; if (!compact) writePrefs({ rail: st.rail }); renderRail(); layout(); } });
+  const deviceBtn = h('button', { class: 'btn device-btn', type: 'button', 'aria-haspopup': 'listbox', onclick: () => toggleDeviceMenu() });
+  const zoomSeg = h('div', { class: 'seg sm', role: 'radiogroup', 'aria-label': 'Thu phóng' }, [['fit', 'Vừa khung'], ['75', '75%'], ['50', '50%']].map(([id, label]) =>
+    h('button', { class: 'seg-item', type: 'button', role: 'radio', 'data-zoom': id, text: label, onclick: () => { st.zoom = id; writePrefs({ zoom: id }); layout(); } })));
+  const rotateBtn = btn('Xoay', 'rotate', { title: 'Xoay (R)', onclick: () => rotate() });
+  const safeBtn = btn('', 'safe', { class: 'btn icon', title: 'Hiện vùng an toàn (tai thỏ, Dynamic Island, thanh Home)', 'aria-label': 'Vùng an toàn', onclick: () => { st.safe = !st.safe; writePrefs({ safe: st.safe }); layout(); } });
+  const qrBtn = btn('', 'qr', { class: 'btn icon', title: 'Mở trên điện thoại', 'aria-label': 'Mã QR để mở trên điện thoại', onclick: () => toggleQr() });
+  const railBtn = btn('', 'info', { class: 'btn icon', title: 'Thông tin game', 'aria-label': 'Thông tin game', onclick: () => { st.rail = !st.rail; if (!compact) writePrefs({ rail: st.rail }); renderRail(); layout(); } });
+  const spec = h('span', { class: 'spec mono' });
 
-  const sub = [game.author, game.status ? STATUS_LABEL[game.status] : '', formatDate(game.updated)].filter(Boolean).join(' · ');
-  const barIcon = game.icon ? h('span', { class: 'app-icon', 'aria-hidden': 'true' }) : null;
-  if (barIcon) loadArt(game, 'icon').then((url) => url && barIcon.append(h('img', { src: url, alt: '' })));
-  const railBanner = game.banner ? h('div', { class: 'rail-banner', 'aria-hidden': 'true' }) : null;
-  if (railBanner) loadArt(game, 'banner').then((url) => url && railBanner.append(h('img', { src: url, alt: '' })));
   const bar = h('header', { class: 'bar' }, [
-    h('a', { class: 'btn icon ghost', href: '#/', title: 'Về thư viện', 'aria-label': 'Về thư viện', html: icon('back') }),
-    barIcon,
-    h('div', { class: 'title' }, [h('h2', { text: game.title }), sub ? h('span', { text: sub }) : null]),
-    h('span', { class: 'spacer' }),
+    h('a', { class: 'btn icon ghost', href: '#/hub', title: 'Về Game Hub', 'aria-label': 'Về Game Hub', html: icon('back') }),
+    compact ? h('div', { class: 'title' }, [h('h2', { text: game.title })]) : null,
+    compact ? null : deviceBtn,
+    compact ? null : zoomSeg,
+    compact ? null : rotateBtn,
+    compact ? null : safeBtn,
     levelSelect,
-    compact ? null : h('div', { class: 'group' }, [deviceBtn, rotateBtn, safeBtn]),
-    compact ? null : h('span', { class: 'divider' }),
-    h('div', { class: 'group' }, [reloadBtn, compact ? null : fullBtn, compact ? null : qrBtn, railBtn]),
+    h('span', { class: 'spacer' }),
+    compact ? null : spec,
+    compact ? null : qrBtn,
+    railBtn,
   ]);
 
+  // ---- DOM: bottom bar
+  const footIcon = h('span', { class: 'app-icon' });
+  if (game.icon) loadArt(game, 'icon').then((url) => url && footIcon.append(h('img', { src: url, alt: '' })));
+  else footIcon.style.setProperty('--h', String(hueOf(game.slug)));
+  const wishBtn = h('button', { class: 'btn outline lg wish', type: 'button', onclick: () => {
+    const on = wish.toggle(game.slug);
+    renderWish();
+    toast(on ? `Đã thêm ${game.title} vào wishlist.` : 'Đã bỏ khỏi wishlist.');
+  } });
+  function renderWish() {
+    const on = wish.has(game.slug);
+    wishBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    wishBtn.innerHTML = `${icon('heart')}<span>${on ? 'Đã trong wishlist' : 'Thêm vào wishlist'}</span>`;
+  }
+  const shareLink = async () => toast((await copyText(location.href)) ? 'Đã sao chép link.' : 'Không sao chép được — hãy copy từ thanh địa chỉ.');
+  const fullBtn = btn('', 'full', { class: 'btn icon lg', title: 'Toàn màn hình', 'aria-label': 'Toàn màn hình', hidden: !document.fullscreenEnabled, onclick: () => stage.requestFullscreen().catch(() => toast('Trình duyệt không cho bật toàn màn hình.')) });
+  const sub = [game.author, game.updated ? `Cập nhật ${shortDate(game.updated)}` : ''].filter(Boolean).join(' · ');
+  const foot = h('footer', { class: 'foot' }, [
+    footIcon,
+    h('div', { class: 'foot-title' }, [h('strong', { text: game.title }), sub ? h('span', { text: sub }) : null]),
+    h('span', { class: 'spacer' }),
+    wishBtn,
+    btn('Chơi lại', 'reload', { class: 'btn lg', title: 'Tải lại game', onclick: () => loadGame() }),
+    btn('Ngẫu nhiên', 'dice', { class: 'btn lg', title: 'Chơi một game ngẫu nhiên', onclick: () => { const g = randomGame(game.slug); if (g) location.hash = `#/play/${g.slug}`; } }),
+    btn('', 'share', { class: 'btn icon lg', title: 'Sao chép link game', 'aria-label': 'Chia sẻ', onclick: shareLink }),
+    fullBtn,
+  ]);
+  renderWish();
+
+  // ---- DOM: rail
   const eventsList = h('ol', {});
   const levelButtons = h('div', { class: 'actions' });
   const levelSection = h('section', { hidden: true }, [h('h3', { text: 'Level' }), levelButtons]);
-  const resetBtn = h('button', { class: 'btn', html: `${icon('trash')}<span>Xoá dữ liệu lưu</span>`, title: 'Xoá điểm, tiến độ… mà game đã lưu trên máy này', onclick: resetSave });
+  const resetBtn = btn('Xoá dữ liệu lưu', 'trash', { title: 'Xoá điểm, tiến độ… mà game đã lưu trên máy này', onclick: resetSave });
+  const railBanner = game.banner ? h('div', { class: 'rail-banner', 'aria-hidden': 'true' }) : null;
+  if (railBanner) loadArt(game, 'banner').then((url) => url && railBanner.append(h('img', { src: url, alt: '' })));
   const rail = h('aside', { class: 'rail', 'aria-label': 'Thông tin game' }, [
     h('section', {}, [
       railBanner,
@@ -542,14 +691,11 @@ function openPlayer(game) {
         ...fact('Dung lượng', formatSize(game.size)),
         ...fact('Nhãn', (game.tags || []).join(', ')),
       ]),
-      h('div', { class: 'actions' }, [
-        h('button', { class: 'btn', html: `${icon('link')}<span>Sao chép link</span>`, onclick: async () => toast((await copyText(location.href)) ? 'Đã sao chép link.' : 'Không sao chép được — hãy copy từ thanh địa chỉ.') }),
-        resetBtn,
-      ]),
+      h('div', { class: 'actions' }, [btn('Sao chép link', 'link', { onclick: shareLink }), resetBtn]),
     ]),
     levelSection,
     h('section', { class: 'events' }, [
-      h('div', { class: 'events-head' }, [h('h3', { text: 'Sự kiện game' }), h('button', { class: 'btn ghost', style: { height: '26px', fontSize: '12px' }, text: 'Xoá', onclick: () => { st.events = []; renderEvents(); } })]),
+      h('div', { class: 'events-head' }, [h('h3', { text: 'Sự kiện game' }), h('button', { class: 'btn ghost sm', type: 'button', text: 'Xoá', onclick: () => { st.events = []; renderEvents(); } })]),
       eventsList,
     ]),
   ]);
@@ -558,7 +704,7 @@ function openPlayer(game) {
     return value ? [h('dt', { text: label }), h('dd', { text: value })] : [];
   }
 
-  const root = h('div', { class: 'player' + (compact ? ' compact' : '') }, [bar, stage, rail]);
+  const root = h('div', { class: 'player' + (compact ? ' compact' : '') }, [bar, stage, foot, rail]);
   app.replaceChildren(root);
   window.scrollTo(0, 0);
 
@@ -570,14 +716,14 @@ function openPlayer(game) {
     const landscape = st.landscape && !fill;
     const rect = stageInner.getBoundingClientRect();
     const g = frameGeometry(d, landscape, rect.width, rect.height);
+    const scale = fill ? 1 : st.zoom === '75' ? 0.75 : st.zoom === '50' ? 0.5 : g.scale;
     frame.className = 'frame' + (free ? ' free' : '') + (fill ? ' fill' : '') + (landscape ? ' landscape' : '');
     frame.style.width = `${g.frameW}px`;
     frame.style.height = `${g.frameH}px`;
     frame.style.setProperty('--bz', `${g.bezel}px`);
     frame.style.setProperty('--r', `${free ? 0 : d.radius}px`);
-    frame.style.transform = g.scale === 1 ? '' : `scale(${g.scale})`;
-    // A scaled element keeps its layout size; negative margins stop it from forcing overflow.
-    frame.style.margin = g.scale === 1 ? '' : `${(g.frameH * (g.scale - 1)) / 2}px ${(g.frameW * (g.scale - 1)) / 2}px`;
+    frame.style.transform = scale === 1 ? '' : `scale(${scale})`;
+    frame.style.margin = scale === 1 ? '' : `${(g.frameH * (scale - 1)) / 2}px ${(g.frameW * (scale - 1)) / 2}px`;
 
     cutout.className = 'cutout ' + (free ? '' : d.cutout);
     cutout.hidden = free || d.cutout === 'none';
@@ -593,12 +739,14 @@ function openPlayer(game) {
     safeBands[3].hidden = !showSafe || !ins.left;
 
     deviceBtn.innerHTML = '';
-    deviceBtn.append(
-      h('span', { class: 'name', text: d.label }),
-      fill ? null : h('span', { class: 'size', text: landscape ? `${d.height} × ${d.width}` : sizeLabel(d) }),
-      h('span', { html: icon('chevron') }),
-    );
+    deviceBtn.append(h('span', { class: 'name', text: d.label }), h('span', { html: icon('chevron') }));
+    for (const b of zoomSeg.children) b.setAttribute('aria-checked', b.dataset.zoom === st.zoom ? 'true' : 'false');
+    zoomSeg.hidden = fill;
+    const w = landscape ? d.height : d.width;
+    const hgt = landscape ? d.width : d.height;
+    spec.textContent = fill ? `${d.label} · ${Math.round(rect.width)}×${Math.round(rect.height)} · HTML5` : `${d.label} · ${w}×${hgt} · ${Math.round(scale * 100)}% · HTML5`;
     rotateBtn.disabled = fill;
+    rotateBtn.setAttribute('aria-pressed', landscape ? 'true' : 'false');
     safeBtn.disabled = free;
     safeBtn.setAttribute('aria-pressed', st.safe && !free ? 'true' : 'false');
     railBtn.setAttribute('aria-pressed', st.rail ? 'true' : 'false');
@@ -613,6 +761,7 @@ function openPlayer(game) {
 
   function renderRail() {
     rail.hidden = !st.rail;
+    root.classList.toggle('with-rail', st.rail);
   }
 
   const resize = 'ResizeObserver' in window ? new ResizeObserver(() => layout()) : null;
@@ -627,7 +776,8 @@ function openPlayer(game) {
   }
 
   async function loadGame() {
-    st.loading = true;
+    st.started = true;
+    splash.hidden = true;
     setLevels(null);
     showOverlay([h('span', { class: 'spinner', 'aria-hidden': 'true' }), h('span', { text: 'Đang tải game…' })]);
     try {
@@ -641,18 +791,17 @@ function openPlayer(game) {
       st.url = url;
       iframe.src = url;
     } catch (err) {
-      st.loading = false;
       showOverlay([
         h('strong', { text: 'Không mở được game' }),
         h('span', { text: String(err && err.name === 'OperationError' ? 'File game không giải mã được — thử tải lại trang.' : err.message || err) }),
-        h('button', { class: 'btn', text: 'Thử lại', onclick: () => loadGame() }),
+        h('button', { class: 'btn', type: 'button', text: 'Thử lại', onclick: () => loadGame() }),
       ]);
     }
   }
+  overlay.hidden = true;
 
   iframe.addEventListener('load', () => {
     if (!st.url) return;
-    st.loading = false;
     overlay.hidden = true;
     setTimeout(() => toGame({ type: 'gamekit:hello' }), 50);
   });
@@ -674,7 +823,7 @@ function openPlayer(game) {
       levelSelect.append(h('option', { value: String(n), text: name ? `${n}. ${name}` : `Level ${n}`, selected: n === info.current }));
       if (n <= 200) {
         levelButtons.append(h('button', {
-          class: 'btn', style: { minWidth: '36px', justifyContent: 'center' }, text: String(n), title: name || `Level ${n}`,
+          class: 'btn sm', type: 'button', style: { minWidth: '36px', justifyContent: 'center' }, text: String(n), title: name || `Level ${n}`,
           'aria-pressed': n === info.current ? 'true' : 'false', 'data-level': String(n), onclick: () => gotoLevel(n),
         }));
       }
@@ -778,12 +927,13 @@ function openPlayer(game) {
     popup.remove();
     popup = null;
   }
-  function openPopup(anchor, panel, width) {
+  function openPopup(anchor, panel, width, alignLeft = false) {
     closePopup();
     const backdrop = h('div', { class: 'backdrop', onclick: closePopup });
     const r = anchor.getBoundingClientRect();
     panel.style.top = `${Math.round(r.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width)))}px`;
+    const left = alignLeft ? r.left : r.right - width;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - width - 8, left)))}px`;
     popup = h('div', {}, [backdrop, panel]);
     document.body.append(popup);
   }
@@ -803,7 +953,7 @@ function openPlayer(game) {
     const panel = h('div', { class: 'menu' }, [
       h('div', { class: 'menu-filter' }, filter),
       list,
-      h('div', { class: 'custom' }, [customInput, h('button', { class: 'btn', text: 'Áp dụng', onclick: applyCustom })]),
+      h('div', { class: 'custom' }, [customInput, h('button', { class: 'btn', type: 'button', text: 'Áp dụng', onclick: applyCustom })]),
     ]);
     customInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCustom(); });
     let items = [];
@@ -818,13 +968,13 @@ function openPlayer(game) {
         list.append(h('li', { class: 'group-label', role: 'presentation', text: grp.label }));
         for (const d of ds) {
           const shown = d.id === CUSTOM_ID ? st.custom : d;
-          const btn = h('button', { class: 'item', role: 'option', 'aria-selected': d.id === st.deviceId ? 'true' : 'false', onclick: () => pick(d.id) }, [
+          const b = h('button', { class: 'item', type: 'button', role: 'option', 'aria-selected': d.id === st.deviceId ? 'true' : 'false', onclick: () => pick(d.id) }, [
             h('span', { class: 'check', text: d.id === st.deviceId ? '✓' : '' }),
             h('span', { text: d.label }),
             h('span', { class: 'size', text: d.id === FILL_ID ? '' : sizeLabel(shown) }),
           ]);
-          items.push(btn);
-          list.append(h('li', { role: 'presentation' }, btn));
+          items.push(b);
+          list.append(h('li', { role: 'presentation' }, b));
         }
       }
       if (!items.length) list.append(h('li', { class: 'no-match', text: 'Không có thiết bị nào khớp.' }));
@@ -834,7 +984,12 @@ function openPlayer(game) {
     }
     function mark() {
       items.forEach((b, i) => b.classList.toggle('active', i === active));
-      if (items[active]) items[active].scrollIntoView({ block: 'nearest' });
+      const el = items[active];
+      if (el) {
+        const top = el.offsetTop - list.offsetTop;
+        if (top < list.scrollTop) list.scrollTop = top;
+        else if (top + el.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + el.offsetHeight - list.clientHeight;
+      }
     }
     filter.addEventListener('input', draw);
     filter.addEventListener('keydown', (e) => {
@@ -850,7 +1005,7 @@ function openPlayer(game) {
       deviceBtn.focus();
     }
     draw();
-    openPopup(deviceBtn, panel, 290);
+    openPopup(deviceBtn, panel, 290, true);
     filter.focus();
   }
 
@@ -860,9 +1015,9 @@ function openPlayer(game) {
     const canvas = h('canvas', { width: 200, height: 200, 'aria-label': 'Mã QR' });
     const panel = h('div', { class: 'pop' }, [
       canvas,
-      h('p', { text: site.locked ? 'Quét bằng camera điện thoại. Lần đầu mở sẽ cần nhập mật khẩu.' : 'Quét bằng camera điện thoại để chơi trên máy thật.' }),
+      h('p', { text: site.locked ? 'Quét bằng camera điện thoại. Lần đầu mở sẽ cần nhập tên và mật khẩu team.' : 'Quét bằng camera điện thoại để chơi trên máy thật.' }),
       h('code', { text: url }),
-      h('button', { class: 'btn', html: `${icon('link')}<span>Sao chép link</span>`, onclick: async () => toast((await copyText(url)) ? 'Đã sao chép link.' : 'Không sao chép được.') }),
+      btn('Sao chép link', 'link', { onclick: async () => toast((await copyText(url)) ? 'Đã sao chép link.' : 'Không sao chép được.') }),
     ]);
     openPopup(qrBtn, panel, 280);
     loadQrLib().then((qrcode) => {
@@ -913,7 +1068,6 @@ function openPlayer(game) {
   renderRail();
   renderEvents();
   layout();
-  loadGame();
 }
 
 let qrPromise = null;

@@ -1,8 +1,18 @@
 {
-  "title": "Prototype Gallery",
-  "subtitle": "Prototype game HTML5 của team — bấm là chơi",
+  "title": "NOC Game",
+  "subtitle": "Prototype Gallery — bấm là chơi",
   "id": "b4268950d2348aa67a0f3558",
   "requirePassword": true,
   "defaultDevice": "iphone-14",
-  "maxGameSizeMB": 40
+  "maxGameSizeMB": 40,
+  "team": {
+    "eyebrow": "Team prototype · nội bộ",
+    "name": "NOC Game",
+    "intro": "Nơi team đưa các bản thử game HTML5 lên để cả nhà bấm vào chơi ngay, góp ý và chọn ra ý tưởng đáng làm tiếp.",
+    "stats": [
+      { "value": "12", "label": "thành viên" },
+      { "value": "2026", "label": "thành lập" }
+    ]
+  },
+  "featured": ["tangle-3"]
 }
