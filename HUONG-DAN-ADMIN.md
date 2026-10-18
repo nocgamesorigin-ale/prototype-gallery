@@ -26,7 +26,10 @@ brand/                (thư mục mới)
 2. Ở chế độ admin, mọi chữ có viền cam nét đứt đều sửa trực tiếp được: tên site, giới thiệu team, số liệu, tiêu đề + các bước trang **Tải về GameKit**, Q&A.
 3. **Ảnh team / logo:** kéo thả ảnh vào khung ảnh ở trang Giới thiệu (tự nén: ảnh team ≤ 1920px JPG, logo 512px PNG).
 4. **Phiên bản mới:** trang Tải về GameKit → mỗi thẻ có ô Phiên bản, Định dạng, Dung lượng, Tên file, **Link tải** (dán link GitHub Release / Google Drive — bộ cài quá nặng để để trong repo). Ngày "cập nhật" tự đổi khi sửa phiên bản.
-5. Bấm **Xem như người dùng** để xem trước, rồi **Lưu & đăng**. Lần đầu cần dán **GitHub fine-grained token**: github.com/settings/personal-access-tokens/new → chọn repo này → *Repository permissions → Contents: Read and write*.
+5. Bấm **Xem như người dùng** để xem trước, rồi **Lưu & đăng**. Lần đầu cần dán một **GitHub token**:
+   - **Chủ repo** (`nocgamesorigin-ale`): *fine-grained token* ở github.com/settings/personal-access-tokens/new → chọn repo này → *Repository permissions → Contents: Read and write*.
+   - **Collaborator** (tài khoản GitHub khác, đã được mời và đã Accept): *classic token* ở github.com/settings/tokens/new, tick quyền **public_repo**. Fine-grained token của collaborator không truy cập được repo thuộc tài khoản cá nhân của người khác.
+   - Copy token bằng nút copy của GitHub rồi dán, đừng gõ tay. Site tự bỏ khoảng trắng và ký tự ẩn, và báo lỗi nếu token có dấu tiếng Việt.
 6. Site ghi vào `gallery.config.json` + `brand/` trong repo; workflow tự build lại, khoảng 1 phút sau mọi người thấy bản mới.
 
 > Quyền admin thật nằm ở token: không có token ghi vào repo thì không đăng được gì, kể cả khi mở được chế độ sửa.

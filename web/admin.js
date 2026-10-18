@@ -159,8 +159,12 @@ export function adminBar() {
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+// Pasted tokens often carry invisible characters (spaces, line breaks, zero-width marks) that make fetch()
+// refuse the Authorization header before any request is sent.
+const cleanToken = (t) => String(t || '').replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, '');
+const TOKEN_RE = /^(github_pat_|ghp_|gho_|ghu_|ghs_)[A-Za-z0-9_]+$/;
 const creds = () => ({
-  token: safeGet('sessionStorage', 'pg:gh-token') || safeGet('localStorage', 'pg:gh-token') || '',
+  token: cleanToken(safeGet('sessionStorage', 'pg:gh-token') || safeGet('localStorage', 'pg:gh-token')),
   repo: safeGet('localStorage', 'pg:gh-repo') || (C() && C().admin && C().admin.repo) || '',
   branch: safeGet('localStorage', 'pg:gh-branch') || (C() && C().admin && C().admin.branch) || 'main',
 });
@@ -168,12 +172,18 @@ const creds = () => ({
 async function gh({ token, repo }, path, opts = {}) {
   let res;
   try {
-    res = await fetch(`https://api.github.com/repos/${repo}/${path}`, {
+    // No trailing slash for the repo itself: GitHub answers "/repos/o/r/" with 404, which fails the CORS preflight.
+    res = await fetch(`https://api.github.com/repos/${repo}${path ? '/' + path : ''}`, {
     ...opts,
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opts.headers || {}) },
     });
-  } catch {
-    const err = new Error('Không kết nối được tới api.github.com. Trang đang mở có thể chặn kết nối ra ngoài (bản xem thử, mạng công ty, VPN, tiện ích chặn quảng cáo). Hãy thử trên site thật ở GitHub Pages.');
+  } catch (cause) {
+    if (cause instanceof TypeError && /ISO-8859-1|Invalid value|header/i.test(cause.message)) {
+      const err = new Error('Token có ký tự lạ (ký tự ẩn, dấu tiếng Việt hoặc xuống dòng) nên trình duyệt không gửi được. Hãy copy lại token trên GitHub và dán vào; tắt bộ gõ tiếng Việt nếu bạn gõ tay.');
+      err.status = 401;
+      throw err;
+    }
+    const err = new Error('Không kết nối được tới api.github.com. Trang đang mở có thể chặn kết nối ra ngoài (bản xem thử, mạng công ty, VPN, tiện ích chặn quảng cáo). Hãy thử trên site thật ở GitHub Pages.' + (cause && cause.message ? ` (${cause.message})` : ''));
     err.status = 0;
     throw err;
   }
@@ -208,12 +218,13 @@ function credsDialog() {
     const close = (v) => { wrap.remove(); resolve(v); };
     const form = h('form', { class: 'modal-card', onsubmit: async (e) => {
       e.preventDefault();
-      const next = { repo: repo.value.trim(), branch: branch.value.trim() || 'main', token: token.value.trim() };
+      const next = { repo: repo.value.trim(), branch: branch.value.trim() || 'main', token: cleanToken(token.value) };
       if (!/^[\w.-]+\/[\w.-]+$/.test(next.repo) || !next.token) { error.textContent = 'Cần repo dạng ten-org/ten-repo và token.'; return; }
+      if (!TOKEN_RE.test(next.token)) { error.textContent = 'Token không đúng dạng: phải bắt đầu bằng github_pat_ (hoặc ghp_) và chỉ gồm chữ không dấu, số, dấu gạch dưới. Hãy copy lại token trên GitHub.'; return; }
       ok.disabled = true; ok.textContent = 'Đang kiểm tra…'; error.textContent = '';
       try {
         const info = await gh(next, '');
-        if (info.permissions && !info.permissions.push) throw new Error('Tài khoản này không có quyền ghi vào repo.');
+        if (info.permissions && !info.permissions.push) throw new Error('Tài khoản này không có quyền ghi vào repo. Hãy nhờ chủ repo mời bạn làm collaborator rồi bấm Accept.');
         safeSet('localStorage', 'pg:gh-repo', next.repo);
         safeSet('localStorage', 'pg:gh-branch', next.branch);
         safeDel('localStorage', 'pg:gh-token'); safeDel('sessionStorage', 'pg:gh-token');
@@ -223,13 +234,14 @@ function credsDialog() {
         error.textContent = err.status === 401 ? 'Token không hợp lệ hoặc đã hết hạn.' : err.status === 404 ? 'Không thấy repo — kiểm tra tên repo và quyền của token.' : String(err.message || err);
       } finally { ok.disabled = false; ok.textContent = 'Xác nhận & đăng'; }
     } }, [
-      h('div', { class: 'lock-head' }, [h('h1', { text: 'Đăng lên GitHub' }), h('p', { html: 'Thay đổi được ghi vào <code>gallery.config.json</code> và <code>brand/</code> trong repo, sau ~1 phút site tự cập nhật. Cần <strong>fine-grained token</strong> có quyền <strong>Contents: Read and write</strong> cho repo này.' })]),
+      h('div', { class: 'lock-head' }, [h('h1', { text: 'Đăng lên GitHub' }), h('p', { html: 'Thay đổi được ghi vào <code>gallery.config.json</code> và <code>brand/</code> trong repo, sau ~1 phút site tự cập nhật. Chủ repo dùng <strong>fine-grained token</strong> (quyền <strong>Contents: Read and write</strong>). Collaborator dùng <strong>classic token</strong> có quyền <strong>public_repo</strong>, vì fine-grained token không truy cập được repo của tài khoản khác.' })]),
       h('label', { class: 'field' }, [h('span', { text: 'Repo' }), repo]),
       h('label', { class: 'field' }, [h('span', { text: 'Nhánh' }), branch]),
       h('label', { class: 'field' }, [h('span', { text: 'GitHub token' }), token]),
       h('label', { class: 'check' }, [remember, 'Ghi nhớ token trên máy này']),
       ok,
-      h('a', { href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener', class: 'modal-link', text: 'Tạo token mới trên GitHub ↗' }),
+      h('a', { href: 'https://github.com/settings/personal-access-tokens/new', target: '_blank', rel: 'noopener', class: 'modal-link', text: 'Tạo fine-grained token (chủ repo) ↗' }),
+      h('a', { href: 'https://github.com/settings/tokens/new?scopes=public_repo&description=NOC%20Game%20gallery', target: '_blank', rel: 'noopener', class: 'modal-link', text: 'Tạo classic token (collaborator) ↗' }),
       error,
       h('button', { class: 'btn icon ghost modal-x', type: 'button', 'aria-label': 'Đóng', html: icon('x'), onclick: () => close(null) }),
     ]);
