@@ -38,9 +38,6 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
-  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
-  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
@@ -294,17 +291,7 @@ function showLock(note = '') {
 
 // ------------------------------------------------------------------ gallery
 
-const filters = { q: '', status: '', tag: '', sort: 'updated', view: 'all' };
-
-// ---- personal data, kept in this browser only
-const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim();
-const me = { get: () => local.get('pg:me') || '', set: (v) => local.set('pg:me', v.trim()) };
-function wishSet() { try { return new Set(JSON.parse(local.get('pg:wish') || '[]')); } catch { return new Set(); } }
-function toggleWish(slug) { const s = wishSet(); s.has(slug) ? s.delete(slug) : s.add(slug); local.set('pg:wish', JSON.stringify([...s])); return s.has(slug); }
-const lastSeen = () => local.get('pg:seen') || '';
-const isNew = (g) => { const seen = lastSeen(); return Boolean(seen && (g.updated || g.created || '') > seen); };
-function markSeen() { const newest = catalog.reduce((m, g) => ((g.updated || '') > m ? g.updated : m), ''); if (newest) local.set('pg:seen', newest); }
-function initials(name) { const w = String(name).trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+const filters = { q: '', status: '', tag: '', sort: 'updated' };
 
 function showGallery() {
   const searchInput = h('input', {
@@ -316,52 +303,22 @@ function showGallery() {
   const grid = h('div', { class: 'grid' });
   const observer = 'IntersectionObserver' in window ? new IntersectionObserver(onCoverVisible, { rootMargin: '200px' }) : null;
 
-  if (!lastSeen()) markSeen(); // first visit: nothing counts as "new"
-  const tabs = h('nav', { class: 'tabs', 'aria-label': 'Mục' });
-  const bellBtn = h('button', { class: 'btn icon bell', title: 'Game mới từ lần xem trước', 'aria-label': 'Game mới', onclick: () => {
-    const n = catalog.filter(isNew).length;
-    filters.view = 'all'; filters.sort = 'updated'; filters.status = ''; filters.tag = '';
-    markSeen(); update();
-    toast(n ? `${n} game mới được xếp lên đầu.` : 'Chưa có game mới nào.');
-  } });
-  const meBtn = h('button', { class: 'me', title: 'Đặt tên của bạn (dùng cho mục "Của tôi")', onclick: askName });
-  function askName() {
-    const v = prompt('Tên bạn dùng khi submit game (trường author / git user.name):', me.get());
-    if (v === null) return;
-    me.set(v); update();
-  }
   const header = h('header', { class: 'top' }, h('div', { class: 'wrap' }, [
     h('div', { class: 'top-row' }, [
       h('div', { class: 'brand' }, [
         h('img', { src: 'icon.svg', alt: '' }),
         h('div', { class: 'brand-text' }, [h('h1', { text: site.title }), site.subtitle ? h('p', { text: site.subtitle }) : null]),
       ]),
-      tabs,
-      h('div', { class: 'top-actions' }, [
-        bellBtn,
-        meBtn,
-        site.locked ? h('button', {
-          class: 'btn ghost icon', title: 'Khoá lại trên máy này', 'aria-label': 'Khoá', html: icon('lock'),
-          onclick: () => { forgetKey(); showLock(); },
-        }) : null,
-      ]),
+      h('label', { class: 'search' }, [h('span', { html: icon('search') }), searchInput]),
+      site.locked ? h('button', {
+        class: 'btn ghost', title: 'Khoá lại trên máy này', html: `${icon('lock')}<span>Khoá</span>`,
+        onclick: () => { forgetKey(); showLock(); },
+      }) : null,
     ]),
+    filterRow,
   ]));
-  const tools = h('div', { class: 'tools' }, [h('label', { class: 'search' }, [h('span', { html: icon('search') }), searchInput]), filterRow]);
 
-  app.replaceChildren(header, h('main', { class: 'wrap' }, [tools, summary, grid]));
-
-  function renderChrome() {
-    const wishes = wishSet();
-    const tab = (id, label, count) => h('button', { class: 'tab', 'aria-pressed': filters.view === id ? 'true' : 'false', onclick: () => { filters.view = id; if (id === 'mine' && !me.get()) askName(); update(); } },
-      [label, count ? h('span', { class: 'tab-count', text: String(count) }) : null]);
-    const mine = me.get() ? catalog.filter((g) => fold(g.author) === fold(me.get())).length : 0;
-    tabs.replaceChildren(tab('all', 'Tất cả', 0), tab('wish', 'Wishlist', wishes.size), tab('mine', 'Của tôi', mine));
-    const fresh = catalog.filter(isNew).length;
-    bellBtn.innerHTML = icon('bell') + (fresh ? `<span class="badge">${fresh > 99 ? '99+' : fresh}</span>` : '');
-    const name = me.get();
-    meBtn.replaceChildren(h('span', { class: 'avatar', html: name ? '' : icon('user') }, name ? initials(name) : null), h('span', { class: 'me-name', text: name || 'Đặt tên' }));
-  }
+  app.replaceChildren(header, h('main', { class: 'wrap' }, [summary, grid]));
 
   function chip(label, pressed, onclick) {
     return h('button', { class: 'chip', 'aria-pressed': pressed ? 'true' : 'false', text: label, onclick });
@@ -386,8 +343,6 @@ function showGallery() {
   }
 
   function matches(g) {
-    if (filters.view === 'wish' && !wishSet().has(g.slug)) return false;
-    if (filters.view === 'mine' && (!me.get() || fold(g.author) !== fold(me.get()))) return false;
     if (filters.status && g.status !== filters.status) return false;
     if (filters.tag && !(g.tags || []).includes(filters.tag)) return false;
     const q = filters.q.trim().toLowerCase().normalize('NFC');
@@ -398,7 +353,6 @@ function showGallery() {
   }
 
   function update() {
-    renderChrome();
     renderFilters();
     const list = catalog.filter(matches).sort((a, b) => {
       if (filters.sort === 'title') return a.title.localeCompare(b.title, 'vi');
@@ -419,21 +373,15 @@ function showGallery() {
       h('span', { text: newest ? `· cập nhật gần nhất ${formatDate(newest)}` : '' }),
     );
     grid.replaceChildren(...list.map(card));
-    if (!list.length) grid.append(h('p', { class: 'card-sub none-match', text: filters.view === 'wish' ? 'Chưa có game nào trong Wishlist. Rê chuột lên một game và bấm biểu tượng tim để lưu.' : filters.view === 'mine' ? `Chưa có game nào có tác giả "${me.get()}". Tên phải khớp trường author khi submit.` : 'Không có game nào khớp bộ lọc.' }));
+    if (!list.length) grid.append(h('p', { class: 'card-sub', text: 'Không có game nào khớp bộ lọc.' }));
   }
 
   function card(g) {
     const cover = h('div', { class: 'cover', 'data-slug': g.slug }, [
       h('div', { class: 'gen', style: { '--h': String(hueOf(g.slug)) } }, h('span', { text: (g.title.trim()[0] || '?').toUpperCase() })),
       g.orientation === 'landscape' ? h('span', { class: 'orient', text: 'NGANG' }) : null,
-      isNew(g) ? h('span', { class: 'new', text: 'MỚI' }) : null,
       h('span', { class: 'play', html: icon('play') }),
     ]);
-    const wished = wishSet().has(g.slug);
-    cover.append(h('button', {
-      class: 'wish', 'aria-pressed': wished ? 'true' : 'false', 'aria-label': wished ? 'Bỏ khỏi Wishlist' : 'Thêm vào Wishlist', html: icon('heart'),
-      onclick: (e) => { e.preventDefault(); e.stopPropagation(); const on = toggleWish(g.slug); toast(on ? 'Đã thêm vào Wishlist.' : 'Đã bỏ khỏi Wishlist.'); update(); },
-    }));
     const coverKind = g.thumb ? 'thumb' : g.banner ? 'banner' : null;
     if (coverKind) {
       if (thumbUrls.has(g[coverKind])) setCover(cover, thumbUrls.get(g[coverKind]), coverKind);
