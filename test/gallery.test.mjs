@@ -8,7 +8,19 @@ import {
   fromB64, toB64, slugify, htmlTitle, normalizeMeta, injectFirst, storageShim,
 } from '../web/shared.js';
 import { frameGeometry, deviceById, parseSize, safeInsets } from '../web/devices.js';
-import { scanGames } from '../scripts/lib/catalog.mjs';
+import { scanGames, titleConflict } from '../scripts/lib/catalog.mjs';
+import { checkArt, imageSize } from '../scripts/lib/image.mjs';
+
+/** Just enough of a PNG for the size reader: signature + IHDR with width/height. */
+function pngHeader(width, height) {
+  const b = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'ascii');
+  b.writeUInt32BE(width, 16);
+  b.writeUInt32BE(height, 20);
+  return b;
+}
 
 const salt = new Uint8Array(16).fill(7);
 
@@ -104,6 +116,60 @@ test('scanGames: skips bad folders, falls back to <title>', async () => {
     assert.ok(problems.some((p) => p.includes('Bad Name')));
     assert.ok(problems.some((p) => p.includes('no-html')));
     assert.ok(problems.some((p) => p.includes('JSON lỗi')));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('imageSize reads PNG, JPEG and WebP headers', () => {
+  assert.deepEqual(imageSize(pngHeader(512, 512)), { type: 'image/png', width: 512, height: 512 });
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x00, 0x04, 0x00, 0x03, 0, 0, 0, 0]);
+  assert.deepEqual(imageSize(jpeg), { type: 'image/jpeg', width: 1024, height: 512 });
+  const webp = Buffer.alloc(30);
+  webp.write('RIFF', 0, 'ascii'); webp.write('WEBP', 8, 'ascii'); webp.write('VP8X', 12, 'ascii');
+  webp.writeUIntLE(1023, 24, 3); webp.writeUIntLE(511, 27, 3);
+  assert.deepEqual(imageSize(webp), { type: 'image/webp', width: 1024, height: 512 });
+  assert.equal(imageSize(Buffer.from('not an image at all, really not')), null);
+});
+
+test('checkArt enforces icon 512×512 and banner 1024×512', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'pg-art-'));
+  try {
+    const icon = path.join(dir, 'i.png');
+    const banner = path.join(dir, 'b.png');
+    await writeFile(icon, pngHeader(512, 512));
+    await writeFile(banner, pngHeader(1024, 500));
+    assert.equal((await checkArt('icon', icon)).ok, true);
+    const bad = await checkArt('banner', banner);
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /1024×512.*1024×500/);
+    assert.equal((await checkArt('icon', path.join(dir, 'x.gif'))).ok, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('titleConflict: same name in any spelling, but not the game itself', () => {
+  const games = [{ meta: { slug: 'tangle-3', title: 'Tangle 3' } }, { meta: { slug: 'bong-bay', title: 'Bóng Bay' } }];
+  assert.equal(titleConflict(games, 'TANGLE  3', 'new-game').meta.slug, 'tangle-3');
+  assert.equal(titleConflict(games, 'tangle-3', '').meta.slug, 'tangle-3');
+  assert.equal(titleConflict(games, 'Bong bay', 'x').meta.slug, 'bong-bay');
+  assert.equal(titleConflict(games, 'Tangle 3', 'tangle-3'), null);
+  assert.equal(titleConflict(games, 'Tangle 4', 'x'), null);
+});
+
+test('scanGames picks up icon and banner', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'pg-'));
+  try {
+    const dir = path.join(root, 'games', 'with-art');
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'index.html'), '<title>Art</title><script></script>');
+    await writeFile(path.join(dir, 'icon.png'), pngHeader(512, 512));
+    await writeFile(path.join(dir, 'banner.png'), pngHeader(800, 400));
+    const { games, problems } = await scanGames(root, path.join(root, 'games'));
+    assert.deepEqual(Object.keys(games[0].art).sort(), ['banner', 'icon']);
+    assert.equal(games[0].art.icon.type, 'image/png');
+    assert.ok(problems.some((p) => p.includes('banner.png') && p.includes('1024×512')));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

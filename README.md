@@ -36,7 +36,13 @@ Nơi lưu các prototype game HTML5 của team. Mỗi game là một thẻ trong
 
 Game làm bằng GameKit build ra **một file** `dist/index.html`, và gallery cần đúng file đó.
 
-### Cách 1: lệnh `submit` (khuyên dùng)
+### Cách 1: nút **Submit game** trong GameKit (dễ nhất)
+
+Cài extension đi kèm một lần (xem [tools/gamekit-submit/README.md](tools/gamekit-submit/README.md)). Sau đó, ở khung **GameKit → Projects**, bấm biểu tượng đám mây ↑ cạnh project. Một popup hiện ra để điền **tên game** (bắt buộc, không trùng game khác), **mô tả**, **icon 512×512** và **banner 1024×512** (đều không bắt buộc). Bấm **Submit** là game được build, đưa vào gallery và push lên.
+
+Submit lại cùng project sẽ thay bản cũ trên gallery bằng bản mới nhất.
+
+### Cách 2: lệnh `submit`
 
 Từ thư mục repo gallery:
 
@@ -70,15 +76,20 @@ npm run submit -- ../tangle-3 \
 | `--landscape` | Game chơi ngang |
 | `--device iphone-14` | Máy mở mặc định |
 | `--thumb file.png` | Ảnh bìa png/jpg/webp ≤ 2 MB, nên dùng tỉ lệ 9:16 |
+| `--icon file.png` | Icon game, đúng 512×512 (hiện cạnh tên game) |
+| `--banner file.png` | Banner, đúng 1024×512 (hiện trên thẻ game nếu không có ảnh bìa, và trong khung thông tin) |
+| `--no-icon` / `--no-banner` / `--no-thumb` | Xoá ảnh đang có |
 | `--slug ten-game` | Tên thư mục trong `games/` |
 | `--build` | Luôn build lại trước khi gửi |
 | `--push` | Commit + push luôn |
 
+Tên game không được trùng với game khác đã có trên gallery: "Tangle 3", "tangle-3" và "TANGLE 3" bị coi là trùng nhau.
+
 Gửi lại cùng một game sẽ **cập nhật** game đó: giữ thông tin cũ, đổi ngày cập nhật. Các bản cũ vẫn nằm trong lịch sử git.
 
-### Cách 2: kéo thả trên github.com
+### Cách 3: kéo thả trên github.com
 
-Trên máy, tạo một thư mục tên `ten-game` (chữ thường, không dấu, nối bằng `-`) chứa `index.html`. Có thể thêm `game.json` và `thumb.png`. Trên github.com, mở thư mục `games/`, chọn *Add file → Upload files*, kéo **cả thư mục** vào rồi *Commit changes*. Không có `game.json` thì tên game lấy từ thẻ `<title>`.
+Trên máy, tạo một thư mục tên `ten-game` (chữ thường, không dấu, nối bằng `-`) chứa `index.html`. Có thể thêm `game.json`, `thumb.png`, `icon.png` (512×512) và `banner.png` (1024×512). Trên github.com, mở thư mục `games/`, chọn *Add file → Upload files*, kéo **cả thư mục** vào rồi *Commit changes*. Không có `game.json` thì tên game lấy từ thẻ `<title>`.
 
 ### `game.json`
 
@@ -134,6 +145,8 @@ Sửa secret `GALLERY_PASSWORD`, rồi chạy lại workflow *Deploy gallery*. M
 gallery.config.json        tên gallery, máy mặc định, giới hạn dung lượng
 games/<slug>/              index.html (+ game.json, thumb.png)
 scripts/submit.mjs         gửi game từ dự án
+scripts/gallery-info.mjs   danh sách game, kiểm tra tên và ảnh (dùng cho nút Submit game)
+tools/gamekit-submit/      extension VS Code: nút Submit game trong GameKit
 scripts/build.mjs          games/ + web/ → site/ (mã hoá)
 scripts/serve.mjs          server tĩnh để thử trên máy
 web/                       giao diện: app.js, app.css, devices.js, shared.js (mã hoá, shim localStorage)

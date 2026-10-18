@@ -382,16 +382,20 @@ function showGallery() {
       g.orientation === 'landscape' ? h('span', { class: 'orient', text: 'NGANG' }) : null,
       h('span', { class: 'play', html: icon('play') }),
     ]);
-    if (g.thumb) {
-      if (thumbUrls.has(g.thumb)) setCover(cover, thumbUrls.get(g.thumb));
+    const coverKind = g.thumb ? 'thumb' : g.banner ? 'banner' : null;
+    if (coverKind) {
+      if (thumbUrls.has(g[coverKind])) setCover(cover, thumbUrls.get(g[coverKind]), coverKind);
       else if (observer) observer.observe(cover);
-      else loadThumb(g).then((url) => url && setCover(cover, url));
+      else loadArt(g, coverKind).then((url) => url && setCover(cover, url, coverKind));
     }
+    const appIcon = g.icon ? h('span', { class: 'app-icon', 'aria-hidden': 'true' }) : null;
+    if (appIcon) loadArt(g, 'icon').then((url) => url && appIcon.append(h('img', { src: url, alt: '' })));
     const sub = [g.author, formatDate(g.updated)].filter(Boolean).join(' · ');
     return h('a', { class: 'card', href: `#/play/${g.slug}`, 'aria-label': `Chơi ${g.title}` }, [
       cover,
       h('div', { class: 'card-meta' }, [
         h('div', { class: 'card-title' }, [
+          appIcon,
           h('h3', { text: g.title }),
           g.status ? h('span', { class: `status ${g.status}`, text: STATUS_LABEL[g.status] || g.status }) : null,
         ]),
@@ -406,7 +410,8 @@ function showGallery() {
       if (!entry.isIntersecting) continue;
       observer.unobserve(entry.target);
       const g = catalog.find((x) => x.slug === entry.target.dataset.slug);
-      if (g) loadThumb(g).then((url) => url && setCover(entry.target, url));
+      const kind = g && (g.thumb ? 'thumb' : g.banner ? 'banner' : null);
+      if (kind) loadArt(g, kind).then((url) => url && setCover(entry.target, url, kind));
     }
   }
 
@@ -425,21 +430,26 @@ function emptyState() {
   ]);
 }
 
-async function loadThumb(g) {
-  if (thumbUrls.has(g.thumb)) return thumbUrls.get(g.thumb);
+/** Decrypted object URL for one of a game's images: kind = thumb | icon | banner. */
+async function loadArt(g, kind) {
+  const file = g[kind];
+  if (!file) return null;
+  if (thumbUrls.has(file)) return thumbUrls.get(file);
   try {
-    const bytes = await openBytes(await fetchBytes(g.thumb));
-    const url = URL.createObjectURL(new Blob([bytes], { type: g.thumbType || 'image/png' }));
-    thumbUrls.set(g.thumb, url);
+    const bytes = await openBytes(await fetchBytes(file));
+    const url = URL.createObjectURL(new Blob([bytes], { type: g[kind + 'Type'] || 'image/png' }));
+    thumbUrls.set(file, url);
     return url;
   } catch {
     return null;
   }
 }
 
-function setCover(cover, url) {
+function setCover(cover, url, kind = 'thumb') {
   if (cover.querySelector('img')) return;
-  cover.prepend(h('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }));
+  // A 2:1 banner in a 9:16 card: show it whole over a blurred, zoomed copy of itself.
+  if (kind === 'banner') cover.prepend(h('img', { class: 'backdrop', src: url, alt: '' }), h('img', { class: 'banner', src: url, alt: '', decoding: 'async' }));
+  else cover.prepend(h('img', { src: url, alt: '', loading: 'lazy', decoding: 'async' }));
   const gen = cover.querySelector('.gen');
   if (gen) gen.remove();
 }
@@ -499,8 +509,13 @@ function openPlayer(game) {
   const railBtn = h('button', { class: 'btn icon', title: 'Thông tin game', 'aria-label': 'Thông tin game', html: icon('info'), onclick: () => { st.rail = !st.rail; if (!compact) writePrefs({ rail: st.rail }); renderRail(); layout(); } });
 
   const sub = [game.author, game.status ? STATUS_LABEL[game.status] : '', formatDate(game.updated)].filter(Boolean).join(' · ');
+  const barIcon = game.icon ? h('span', { class: 'app-icon', 'aria-hidden': 'true' }) : null;
+  if (barIcon) loadArt(game, 'icon').then((url) => url && barIcon.append(h('img', { src: url, alt: '' })));
+  const railBanner = game.banner ? h('div', { class: 'rail-banner', 'aria-hidden': 'true' }) : null;
+  if (railBanner) loadArt(game, 'banner').then((url) => url && railBanner.append(h('img', { src: url, alt: '' })));
   const bar = h('header', { class: 'bar' }, [
     h('a', { class: 'btn icon ghost', href: '#/', title: 'Về thư viện', 'aria-label': 'Về thư viện', html: icon('back') }),
+    barIcon,
     h('div', { class: 'title' }, [h('h2', { text: game.title }), sub ? h('span', { text: sub }) : null]),
     h('span', { class: 'spacer' }),
     levelSelect,
@@ -515,6 +530,7 @@ function openPlayer(game) {
   const resetBtn = h('button', { class: 'btn', html: `${icon('trash')}<span>Xoá dữ liệu lưu</span>`, title: 'Xoá điểm, tiến độ… mà game đã lưu trên máy này', onclick: resetSave });
   const rail = h('aside', { class: 'rail', 'aria-label': 'Thông tin game' }, [
     h('section', {}, [
+      railBanner,
       h('h3', { text: 'Giới thiệu' }),
       h('p', { class: 'desc' + (game.description ? '' : ' none'), text: game.description || 'Chưa có mô tả.' }),
       h('dl', { class: 'facts' }, [

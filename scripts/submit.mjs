@@ -6,14 +6,16 @@
 //   npm run submit -- ~/Downloads/game.html --title "Bóng bay" --tags casual,demo
 //
 // Options: --slug  --title  --author  --desc  --tags a,b  --status wip|playtest|done|archived
-//          --landscape | --portrait  --device iphone-14  --thumb anh.png  --build  --push
+//          --landscape | --portrait  --device iphone-14  --thumb anh.png  --icon 512.png  --banner 1024x512.png
+//          --no-thumb | --no-icon | --no-banner  --build  --push
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SLUG_RE, STATUSES, htmlTitle, normalizeMeta, slugify } from '../web/shared.js';
-import { THUMB_NAMES } from './lib/catalog.mjs';
+import { scanGames, titleConflict } from './lib/catalog.mjs';
+import { ART, artNames, checkArt } from './lib/image.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -23,7 +25,7 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (!a.startsWith('--')) { positional.push(a); continue; }
   const name = a.slice(2);
-  if (['build', 'push', 'landscape', 'portrait', 'help'].includes(name)) opts[name] = true;
+  if (['build', 'push', 'landscape', 'portrait', 'help', 'no-thumb', 'no-icon', 'no-banner'].includes(name)) opts[name] = true;
   else opts[name] = argv[++i];
 }
 
@@ -42,7 +44,10 @@ if (opts.help || positional.length !== 1) {
   --status wip           wip | playtest | done | archived
   --landscape            game chơi ngang (mặc định: dọc)
   --device iphone-14     máy mở mặc định trong khung preview
-  --thumb cover.png      ảnh bìa (png/jpg/webp, ≤ 2 MB)
+  --thumb cover.png      ảnh bìa dọc 9:16 (png/jpg/webp, ≤ 2 MB)
+  --icon icon.png        icon game, đúng 512×512
+  --banner banner.png    banner, đúng 1024×512
+  --no-icon              xoá icon đang có (tương tự --no-banner, --no-thumb)
   --slug ten-thu-muc     tên thư mục trong games/ (mặc định: theo package.json)
   --build                chạy "npm run build" trong dự án trước khi lấy file
   --push                 git add + commit + push ngay sau khi chép`);
@@ -112,6 +117,16 @@ const gitName = () => {
 const pkgDesc = typeof pkg.description === 'string' && !/made with GameKit/i.test(pkg.description) ? pkg.description : '';
 const today = new Date().toISOString().slice(0, 10);
 
+// Images are checked before anything is written, so a bad file leaves the game untouched.
+const art = {};
+for (const kind of Object.keys(ART)) {
+  if (!opts[kind]) continue;
+  const file = path.resolve(expand(opts[kind]));
+  const check = await checkArt(kind, file);
+  if (!check.ok) die(check.error);
+  art[kind] = { file, ext: check.ext };
+}
+
 const merged = {
   title: opts.title ?? previous.title ?? htmlTitle(html),
   description: opts.desc ?? previous.description ?? pkgDesc,
@@ -125,6 +140,9 @@ const merged = {
 };
 const { meta, warnings } = normalizeMeta(merged, slug, htmlTitle(html));
 for (const w of warnings) console.warn('⚠ ' + w);
+const { games: others } = await scanGames(root, path.join(root, 'games'), { maxBytes: Infinity });
+const clash = titleConflict(others, meta.title, slug);
+if (clash) die(`Tên "${meta.title}" trùng với game đã có: "${clash.meta.title}" (games/${clash.meta.slug}). Hãy đặt tên khác.`);
 const { slug: _omit, ...stored } = meta;
 for (const k of Object.keys(stored)) if (stored[k] === '' || (Array.isArray(stored[k]) && !stored[k].length)) delete stored[k];
 
@@ -132,14 +150,10 @@ for (const k of Object.keys(stored)) if (stored[k] === '' || (Array.isArray(stor
 await mkdir(dest, { recursive: true });
 await copyFile(htmlPath, path.join(dest, 'index.html'));
 await writeFile(metaPath, JSON.stringify(stored, null, 2) + '\n');
-if (opts.thumb) {
-  const thumb = path.resolve(expand(opts.thumb));
-  const ext = path.extname(thumb).toLowerCase();
-  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) die('Ảnh bìa phải là .png, .jpg hoặc .webp');
-  if (!(await isFile(thumb))) die(`Không thấy ảnh ${thumb}`);
-  if ((await stat(thumb)).size > 2 * 1048576) die('Ảnh bìa lớn hơn 2 MB');
-  for (const name of THUMB_NAMES) await rm(path.join(dest, name), { force: true });
-  await copyFile(thumb, path.join(dest, 'thumb' + (ext === '.jpeg' ? '.jpg' : ext)));
+for (const kind of Object.keys(ART)) {
+  if (!art[kind] && !opts['no-' + kind]) continue;
+  for (const name of artNames(kind)) await rm(path.join(dest, name), { force: true });
+  if (art[kind]) await copyFile(art[kind].file, path.join(dest, ART[kind].base + art[kind].ext));
 }
 
 console.log(`✔ ${isUpdate ? 'Cập nhật' : 'Thêm'} games/${slug}/ — "${meta.title}", ${(size / 1048576).toFixed(2)} MB`);

@@ -1,0 +1,55 @@
+{
+  "name": "gamekit-gallery-submit",
+  "displayName": "GameKit — Submit game",
+  "description": "Nút Submit game cho GameKit: đặt tên, mô tả, icon, banner rồi đưa game lên Prototype Gallery.",
+  "version": "0.1.0",
+  "publisher": "prototype-gallery",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nocgamesorigin-ale/prototype-gallery"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "gamekitGallery.submit",
+        "title": "Submit game",
+        "category": "GameKit",
+        "icon": "$(cloud-upload)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "gamekitGallery.submit",
+          "when": "view == gamekit.projects && viewItem =~ /^project/",
+          "group": "inline@0"
+        },
+        {
+          "command": "gamekitGallery.submit",
+          "when": "view == gamekit.projects && viewItem =~ /^project/",
+          "group": "0_gallery@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GameKit — Submit game",
+      "properties": {
+        "gamekitGallery.repoPath": {
+          "type": "string",
+          "default": "~/Downloads/prototype-gallery",
+          "description": "Thư mục repo Prototype Gallery trên máy (có scripts/submit.mjs)."
+        }
+      }
+    }
+  }
+}

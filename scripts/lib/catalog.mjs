@@ -2,11 +2,10 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { SLUG_RE, htmlTitle, normalizeMeta } from '../../web/shared.js';
+import { SLUG_RE, htmlTitle, normalizeMeta, slugify } from '../../web/shared.js';
+import { ART, IMAGE_TYPES, MAX_IMAGE_BYTES, artNames, imageSize } from './image.mjs';
 
-export const THUMB_NAMES = ['thumb.png', 'thumb.jpg', 'thumb.jpeg', 'thumb.webp'];
-const THUMB_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
-export const MAX_THUMB_BYTES = 2 * 1024 * 1024;
+export const THUMB_NAMES = artNames('thumb');
 
 async function exists(file) {
   try {
@@ -27,7 +26,7 @@ function gitDate(root, rel) {
 }
 
 /**
- * Scan gamesDir. Returns { games: [{ meta, htmlPath, thumbPath, thumbType, size }], problems: [string] }.
+ * Scan gamesDir. Returns { games: [{ meta, htmlPath, size, art: { thumb|icon|banner: { path, type } } }], problems: [string] }.
  * A folder without index.html is reported and skipped; other mistakes become warnings.
  */
 export async function scanGames(root, gamesDir, { maxBytes = 40 * 1024 * 1024 } = {}) {
@@ -74,22 +73,35 @@ export async function scanGames(root, gamesDir, { maxBytes = 40 * 1024 * 1024 } 
     if (!meta.created) meta.created = meta.updated;
     if (!/<script|<canvas/i.test(html)) problems.push(`games/${slug}/index.html: không thấy <script> hay <canvas> — có chắc đây là file build của game?`);
 
-    let thumbPath = null;
-    let thumbType = null;
-    for (const name of THUMB_NAMES) {
-      const p = path.join(dir, name);
-      if (await exists(p)) {
-        if ((await stat(p)).size > MAX_THUMB_BYTES) {
-          problems.push(`games/${slug}/${name}: ảnh bìa lớn hơn 2 MB — bỏ qua ảnh`);
-          break;
+    const art = {};
+    for (const kind of Object.keys(ART)) {
+      for (const name of artNames(kind)) {
+        const p = path.join(dir, name);
+        if (!(await exists(p))) continue;
+        const bytes = await readFile(p);
+        const info = imageSize(bytes);
+        const want = ART[kind].size;
+        if (bytes.length > MAX_IMAGE_BYTES) problems.push(`games/${slug}/${name}: ${ART[kind].label.toLowerCase()} lớn hơn 2 MB — bỏ qua ảnh`);
+        else if (!info) problems.push(`games/${slug}/${name}: không đọc được ảnh — bỏ qua`);
+        else {
+          if (want && (info.width !== want[0] || info.height !== want[1])) problems.push(`games/${slug}/${name}: nên là ${want[0]}×${want[1]} px (đang ${info.width}×${info.height})`);
+          art[kind] = { path: p, type: IMAGE_TYPES[path.extname(name)] };
         }
-        thumbPath = p;
-        thumbType = THUMB_TYPES[path.extname(name)];
         break;
       }
     }
-    games.push({ meta, htmlPath, thumbPath, thumbType, size });
+    games.push({ meta, htmlPath, size, art });
   }
   games.sort((a, b) => (b.meta.updated || '').localeCompare(a.meta.updated || '') || a.meta.title.localeCompare(b.meta.title));
   return { games, problems };
+}
+
+/** Name used to compare titles: "Tangle 3", "tangle-3" and "TANGLE  3" are the same game name. */
+export const titleKey = (title) => slugify(String(title || '')) || String(title || '').trim().toLowerCase();
+
+/** The game (other than `slug`) that already uses this title, or null. */
+export function titleConflict(games, title, slug) {
+  const key = titleKey(title);
+  if (!key) return null;
+  return games.find((g) => g.meta.slug !== slug && (titleKey(g.meta.title) === key || g.meta.slug === key)) || null;
 }

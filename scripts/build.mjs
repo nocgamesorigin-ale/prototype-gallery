@@ -61,12 +61,13 @@ const catalog = [];
 for (const g of games) {
   const file = `g/${await fileId(g.meta.slug)}.bin`;
   await writeFile(path.join(outDir, file), await seal(await readFile(g.htmlPath)));
-  let thumb = null;
-  if (g.thumbPath) {
-    thumb = `g/${await fileId(g.meta.slug, ':thumb')}.bin`;
-    await writeFile(path.join(outDir, thumb), await seal(await readFile(g.thumbPath)));
+  const images = {};
+  for (const [kind, a] of Object.entries(g.art)) {
+    images[kind] = `g/${await fileId(g.meta.slug, ':' + kind)}.bin`;
+    images[kind + 'Type'] = a.type;
+    await writeFile(path.join(outDir, images[kind]), await seal(await readFile(a.path)));
   }
-  catalog.push({ ...g.meta, file, thumb, thumbType: g.thumbType, size: g.size });
+  catalog.push({ ...g.meta, file, ...images, size: g.size });
 }
 
 const catalogJson = JSON.stringify({ v: FORMAT_VERSION, games: catalog });
@@ -89,7 +90,7 @@ await writeFile(path.join(outDir, 'data', 'site.json'), JSON.stringify(site, nul
 // ------------------------------------------------------------------ report
 const mb = (n) => (n / 1048576).toFixed(2) + ' MB';
 console.log(`${locked ? '🔒 Đã khoá bằng mật khẩu' : '🔓 KHÔNG khoá (chỉ dùng để thử trên máy)'} — ${games.length} game → ${path.relative(root, outDir)}/`);
-for (const g of catalog) console.log(`  • ${g.slug.padEnd(28)} ${g.title.slice(0, 32).padEnd(32)} ${g.updated}  ${mb(g.size)}${g.thumb ? '  [ảnh bìa]' : ''}`);
+for (const g of catalog) console.log(`  • ${g.slug.padEnd(28)} ${g.title.slice(0, 32).padEnd(32)} ${g.updated}  ${mb(g.size)}${['thumb', 'icon', 'banner'].filter((k) => g[k]).map((k) => `  [${k}]`).join('')}`);
 if (problems.length) {
   console.log('\nCần xem lại:');
   for (const p of problems) console.log('  ⚠ ' + p);

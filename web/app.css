@@ -193,6 +193,13 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .card:focus-visible { outline: none; }
 .card:focus-visible .cover { outline: 2px solid var(--accent); outline-offset: 3px; }
 .cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cover img.backdrop { filter: blur(18px) saturate(1.2); transform: scale(1.4); opacity: .85; }
+.cover img.banner { inset: 50% 0 auto; height: auto; aspect-ratio: 2 / 1; translate: 0 -50%; object-fit: contain; box-shadow: 0 6px 18px rgb(0 0 0 / .25); }
+.app-icon { flex: none; width: 24px; height: 24px; border-radius: 6px; overflow: hidden; background: var(--surface-2); box-shadow: 0 0 0 1px var(--line); }
+.app-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bar .app-icon { width: 32px; height: 32px; border-radius: 8px; margin-left: 4px; }
+.rail-banner { aspect-ratio: 2 / 1; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.rail-banner img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .cover .gen {
   position: absolute; inset: 0; display: grid; place-items: center;
   background:
