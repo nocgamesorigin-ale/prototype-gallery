@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Ví dụ: Bóng Bay</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1b2a49; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Ví dụ một file: bấm hết bóng bay trước khi hết giờ. 12 level, lưu điểm cao bằng localStorage,
+// gửi level + sự kiện cho khung preview (cùng giao thức với GameKit).
+(function () {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const LEVELS = 12;
+  const embedded = window.parent !== window;
+  const post = (m) => { if (embedded) try { window.parent.postMessage(m, '*'); } catch (e) {} };
+  const emit = (name, data) => post({ type: 'gamekit:event', name, data: data || {}, ts: Date.now() });
+
+  let W = 0, H = 0, dpr = 1;
+  function resize() {
+    dpr = Math.min(3, window.devicePixelRatio || 1);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', () => { resize(); layoutLevel(); });
+
+  function rng(seed) { return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+  let level = 1, balloons = [], timeLeft = 0, state = 'play', popped = 0, best = 0;
+  try { best = Number(localStorage.getItem('vi-du-bong-bay.best')) || 0; } catch (e) {}
+  let layoutSeed = [];
+
+  function startLevel(n) {
+    level = Math.max(1, Math.min(LEVELS, n));
+    const r = rng(level * 7919);
+    const count = 4 + level * 2;
+    layoutSeed = Array.from({ length: count }, () => ({ x: r(), y: r(), hue: Math.floor(r() * 360), s: 0.8 + r() * 0.5 }));
+    layoutLevel();
+    timeLeft = Math.max(6, 16 - level * 0.6);
+    popped = 0;
+    state = 'play';
+    emit('level_start', { level });
+  }
+  function layoutLevel() {
+    const top = 70, pad = 36;
+    balloons = layoutSeed.map((b, i) => ({
+      ...b, i,
+      cx: pad + b.x * (W - pad * 2), cy: top + pad + b.y * (H - top - pad * 2.5),
+      r: Math.max(18, Math.min(W, H) * 0.055 * b.s), alive: balloons[i] ? balloons[i].alive !== false : true,
+    }));
+  }
+
+  function tap(x, y) {
+    if (state !== 'play') {
+      if (state === 'win') { const next = level < LEVELS ? level + 1 : 1; startLevel(next); post({ type: 'gamekit:level', current: level }); }
+      else startLevel(level);
+      return;
+    }
+    for (let i = balloons.length - 1; i >= 0; i--) {
+      const b = balloons[i];
+      if (b.alive && (x - b.cx) ** 2 + (y - b.cy) ** 2 < (b.r * 1.15) ** 2) {
+        b.alive = false; popped++;
+        if (balloons.every((q) => !q.alive)) {
+          state = 'win';
+          const score = Math.round(timeLeft * 10) + level * 50;
+          if (score > best) { best = score; try { localStorage.setItem('vi-du-bong-bay.best', String(best)); } catch (e) {} }
+          emit('level_win', { level, score, best });
+        }
+        return;
+      }
+    }
+  }
+  canvas.addEventListener('pointerdown', (e) => { const r = canvas.getBoundingClientRect(); tap(e.clientX - r.left, e.clientY - r.top); });
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (state === 'play') {
+      timeLeft -= dt;
+      if (timeLeft <= 0) { timeLeft = 0; state = 'lose'; emit('level_lose', { level, popped }); }
+    }
+    draw(now / 1000);
+    requestAnimationFrame(frame);
+  }
+
+  function draw(t) {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#24385f'); g.addColorStop(1, '#4a6fa5');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (const b of balloons) {
+      if (!b.alive) continue;
+      const bob = Math.sin(t * 2 + b.i) * 4;
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(b.cx, b.cy + b.r + bob); ctx.quadraticCurveTo(b.cx + 6, b.cy + b.r * 1.8 + bob, b.cx, b.cy + b.r * 2.4 + bob); ctx.stroke();
+      ctx.fillStyle = `hsl(${b.hue} 80% 60%)`;
+      ctx.beginPath(); ctx.ellipse(b.cx, b.cy + bob, b.r * 0.86, b.r, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)';
+      ctx.beginPath(); ctx.ellipse(b.cx - b.r * 0.3, b.cy - b.r * 0.35 + bob, b.r * 0.18, b.r * 0.28, -0.5, 0, Math.PI * 2); ctx.fill();
+    }
+    // HUD — đặt dưới vùng tai thỏ (~60px) để thử lớp Safe area.
+    ctx.fillStyle = '#fff'; ctx.font = '600 18px system-ui, sans-serif'; ctx.textBaseline = 'top';
+    ctx.textAlign = 'left'; ctx.fillText(`Level ${level}/${LEVELS}`, 16, 62);
+    ctx.textAlign = 'right'; ctx.fillText(`⏱ ${timeLeft.toFixed(1)}s`, W - 16, 62);
+    ctx.textAlign = 'center'; ctx.font = '500 13px system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.fillText(`Điểm cao: ${best}`, W / 2, 64);
+    if (state !== 'play') {
+      ctx.fillStyle = 'rgba(10,15,30,.6)'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '800 34px system-ui, sans-serif';
+      ctx.fillText(state === 'win' ? 'Xong level!' : 'Hết giờ', W / 2, H / 2 - 16);
+      ctx.font = '500 16px system-ui, sans-serif';
+      ctx.fillText(state === 'win' ? 'Chạm để sang level tiếp' : 'Chạm để chơi lại', W / 2, H / 2 + 24);
+    }
+  }
+
+  // ---- giao thức level (giống template GameKit)
+  const announce = () => post({ type: 'gamekit:levels', count: LEVELS, current: level });
+  window.addEventListener('message', (e) => {
+    if (e.source !== window.parent || !e.data) return;
+    if (e.data.type === 'gamekit:hello') announce();
+    if (e.data.type === 'gamekit:goto') { startLevel(Number(e.data.level) || 1); post({ type: 'gamekit:level', current: level }); }
+  });
+
+  resize();
+  startLevel(1);
+  announce();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

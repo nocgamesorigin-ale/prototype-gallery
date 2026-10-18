@@ -1,0 +1,10 @@
+{
+  "title": "Ví dụ: Bóng Bay",
+  "description": "Game mẫu để kiểm tra gallery: bấm hết bóng trước khi hết giờ. Có 12 level, lưu điểm cao, gửi sự kiện level_start / level_win / level_lose. Xoá thư mục games/vi-du-bong-bay khi đã có game thật.",
+  "author": "GameKit",
+  "tags": ["ví dụ", "casual"],
+  "status": "done",
+  "orientation": "portrait",
+  "created": "2026-10-18",
+  "updated": "2026-10-18"
+}

@@ -1,0 +1,8 @@
+{
+  "title": "Prototype Gallery",
+  "subtitle": "Prototype game HTML5 của team — bấm là chơi",
+  "id": "b4268950d2348aa67a0f3558",
+  "requirePassword": true,
+  "defaultDevice": "iphone-14",
+  "maxGameSizeMB": 40
+}
