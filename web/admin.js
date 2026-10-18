@@ -166,10 +166,17 @@ const creds = () => ({
 });
 
 async function gh({ token, repo }, path, opts = {}) {
-  const res = await fetch(`https://api.github.com/repos/${repo}/${path}`, {
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${repo}/${path}`, {
     ...opts,
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opts.headers || {}) },
-  });
+    });
+  } catch {
+    const err = new Error('Không kết nối được tới api.github.com. Trang đang mở có thể chặn kết nối ra ngoài (bản xem thử, mạng công ty, VPN, tiện ích chặn quảng cáo). Hãy thử trên site thật ở GitHub Pages.');
+    err.status = 0;
+    throw err;
+  }
   if (!res.ok) {
     let msg = `GitHub ${res.status}`;
     try { msg += ': ' + (await res.json()).message; } catch { /* no body */ }
