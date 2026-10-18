@@ -6,19 +6,10 @@
   "defaultDevice": "iphone-14",
   "maxGameSizeMB": 40,
   "team": {
-    "eyebrow": "Team prototype · nội bộ",
+    "eyebrow": "PROTOTYPE GAME · NỘI BỘ",
     "name": "NOC Game",
-    "intro": "Nơi team đưa các bản thử game HTML5 lên để cả nhà bấm vào chơi ngay, góp ý và chọn ra ý tưởng đáng làm tiếp.",
-    "stats": [
-      {
-        "value": "12",
-        "label": "thành viên"
-      },
-      {
-        "value": "2026",
-        "label": "thành lập"
-      }
-    ]
+    "intro": "Nơi NOCer biến ý tưởng thành hot hitt!",
+    "stats": []
   },
   "featured": [
     "tangle-3"
@@ -145,6 +136,74 @@
     {
       "text": "Trên điện thoại game mở tràn màn hình. Game chơi ngang sẽ nhắc bạn **xoay ngang** máy.",
       "code": ""
+    }
+  ],
+  "downloads": {
+    "eyebrow": "Tài nguyên",
+    "title": "Tải về & hướng dẫn GameKit",
+    "intro": "Mọi thứ cần để bắt đầu: bộ cài GameKit, cách cài đặt, cách build & submit game, và các lỗi thường gặp.",
+    "updated": "2026-10-18",
+    "labels": [
+      "Tải về",
+      "Cài đặt",
+      "Hướng dẫn GameKit",
+      "Dùng trên điện thoại",
+      "Q&A khắc phục lỗi"
+    ],
+    "items": [
+      {
+        "os": "windows",
+        "label": "Windows",
+        "version": "0.3.0",
+        "ext": "exe",
+        "size": "163 MB",
+        "file": "GameKit-0.3.0",
+        "url": "https://drive.google.com/drive/folders/1QA6MVB92Fz8FeMILYMkggnqCWVGsC2Gt?usp=drive_link"
+      },
+      {
+        "os": "macos",
+        "label": "macOS",
+        "version": "0.3.0",
+        "ext": "zip",
+        "size": "324 MB",
+        "file": "GameKit-0.3.0",
+        "url": "https://drive.google.com/drive/folders/1BL-Z7WTz-1qCnlMfT9H2fWdKHAKObMYf?usp=drive_link"
+      },
+      {
+        "os": "linux",
+        "label": "Linux",
+        "version": "0.3.0",
+        "ext": "deb",
+        "size": "150 MB",
+        "file": "GameKit-0.3.0",
+        "url": "https://drive.google.com/drive/folders/12kEiPpgYfTcNvR-sKEe28_tvZ3f4lRrF?usp=drive_link"
+      }
+    ]
+  },
+  "faq": [
+    {
+      "q": "Game không hiện ảnh hoặc âm thanh?",
+      "a": "Gallery chỉ chạy game **một file HTML**: ảnh và âm thanh phải nhúng sẵn trong file. Template GameKit đã làm việc này (vite-plugin-singlefile)."
+    },
+    {
+      "q": "Game báo lỗi fetch, indexedDB hoặc cookie?",
+      "a": "Game chạy với origin \"null\" nên `fetch` tới file bên cạnh, indexedDB và cookie không hoạt động. localStorage và sessionStorage đã được giả lập."
+    },
+    {
+      "q": "Submit báo trùng tên?",
+      "a": "\"Tangle 3\", \"tangle-3\" và \"TANGLE 3\" bị coi là trùng nhau. Đổi tên khác, hoặc submit lại đúng project cũ để cập nhật."
+    },
+    {
+      "q": "Game quá nặng, không lên được?",
+      "a": "Mỗi game tối đa **40 MB**. GitHub chặn file trên 100 MB."
+    },
+    {
+      "q": "Bị hỏi lại mật khẩu?",
+      "a": "Admin vừa đổi mật khẩu team. Hỏi trưởng team mật khẩu mới."
+    },
+    {
+      "q": "Muốn chơi lại từ đầu?",
+      "a": "Trong màn chơi, mở ⓘ **Thông tin game** → **Xoá dữ liệu lưu**."
     }
   ]
 }
