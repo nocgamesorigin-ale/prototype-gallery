@@ -7,6 +7,10 @@ import {
 import {
   CUSTOM_ID, DEFAULT_DEVICE_ID, DEVICES, FILL_ID, GROUPS, deviceById, frameGeometry, parseSize, safeInsets, sizeLabel,
 } from './devices.js';
+import { h, icon, btn, hueOf, toast, copyText } from './ui.js';
+import { DEFAULT_CONTENT, mergeContent } from './defaults.js';
+import { C, admin, adminBar, adminUnlocked, dropzone, ed, enterAdmin, isEditing, markDirty, overrides, setContent, unlockAdmin } from './admin.js';
+import { showDownloads } from './downloads.js';
 
 const app = document.getElementById('app');
 const textDecoder = new TextDecoder();
@@ -23,58 +27,6 @@ const safeStore = (area) => ({
 });
 const local = safeStore('localStorage');
 const session = safeStore('sessionStorage');
-
-const ICONS = {
-  back: '<path d="M15 18l-6-6 6-6"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
-  play: '<path d="M7 4l13 8-13 8z" fill="currentColor" stroke="none"/>',
-  rotate: '<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/>',
-  safe: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M6 6.5h12M6 17.5h12"/>',
-  reload: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
-  full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
-  qr: '<rect x="3.5" y="3.5" width="6" height="6" rx="1"/><rect x="14.5" y="3.5" width="6" height="6" rx="1"/><rect x="3.5" y="14.5" width="6" height="6" rx="1"/><path d="M14.5 14.5h2.5v2.5M20.5 14.5v6h-3.5M14.5 20.5v-2"/>',
-  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
-  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
-  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-  chevron: '<path d="M6 9l6 6 6-6"/>',
-  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7z"/>',
-  dice: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01"/>',
-  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
-  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
-  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  gamepad: '<rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4M15 12h.01M18 11h.01"/>',
-  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-};
-const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
-
-/** h('div', { class, text, html, onclick, ...attrs }, [children]) */
-function h(tag, attrs = {}, children = []) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === undefined || v === null || v === false) continue;
-    if (k === 'class') el.className = v;
-    else if (k === 'text') el.textContent = v;
-    else if (k === 'html') el.innerHTML = v; // only ever our own icon markup
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') {
-      for (const [prop, val] of Object.entries(v)) {
-        if (prop.startsWith('--')) el.style.setProperty(prop, val);
-        else el.style[prop] = val;
-      }
-    }
-    else el.setAttribute(k, v === true ? '' : String(v));
-  }
-  for (const c of [].concat(children)) if (c !== null && c !== undefined && c !== false) el.append(c);
-  return el;
-}
-const btn = (label, iconName, attrs = {}) => h('button', { class: 'btn', type: 'button', ...attrs, html: `${iconName ? icon(iconName) : ''}${label ? `<span>${label}</span>` : ''}` });
-
-function hueOf(text) {
-  let x = 2166136261;
-  for (let i = 0; i < text.length; i++) x = Math.imul(x ^ text.charCodeAt(i), 16777619);
-  return Math.abs(x) % 360;
-}
 
 function formatSize(n) {
   if (!n) return '—';
@@ -94,31 +46,6 @@ function formatDate(iso) {
   return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 const shortDate = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
-
-let toastTimer = 0;
-function toast(message) {
-  document.querySelectorAll('.toast').forEach((t) => t.remove());
-  const t = h('div', { class: 'toast', role: 'status', text: message });
-  document.body.append(t);
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.remove(), 2400);
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const ta = h('textarea', { style: { position: 'fixed', opacity: '0' } });
-    ta.value = text;
-    document.body.append(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch { ok = false; }
-    ta.remove();
-    return ok;
-  }
-}
 
 // ------------------------------------------------------------------ user (nickname) + wishlist
 
@@ -188,6 +115,7 @@ function forgetKey() {
   }
   nick.clear();
   key = null;
+  ready = false;
   catalog = [];
   for (const url of thumbUrls.values()) URL.revokeObjectURL(url);
   thumbUrls.clear();
@@ -199,6 +127,10 @@ async function loadCatalog() {
   catalog = Array.isArray(data.games) ? data.games : [];
   team = data.team && typeof data.team === 'object' ? data.team : {};
   featured = Array.isArray(data.featured) ? data.featured : [];
+  setContent(mergeContent(DEFAULT_CONTENT, {
+    title: site.title, subtitle: site.subtitle, team,
+    downloads: data.downloads, install: data.install, guide: data.guide, mobile: data.mobile, faq: data.faq, admin: data.admin,
+  }));
 }
 
 /** Decrypted object URL for an encrypted file (game art or team photo). */
@@ -232,6 +164,7 @@ async function boot() {
     return;
   }
   document.title = site.title;
+  window.addEventListener('beforeunload', (e) => { if (admin.active && admin.dirty) { e.preventDefault(); e.returnValue = ''; } });
   if (site.logo) document.querySelector('link[rel=icon]')?.setAttribute('href', site.logo);
   if (site.locked) {
     const restored = await restoreKey();
@@ -246,9 +179,11 @@ async function boot() {
   await enter();
 }
 
+let ready = false;
 async function enter() {
   try {
     await loadCatalog();
+    ready = true;
   } catch (err) {
     fatal('Không đọc được danh sách game', String(err.message || err));
     return;
@@ -271,13 +206,21 @@ function route() {
     toast('Không tìm thấy game này — có thể đã bị xoá.');
     history.replaceState(null, '', '#/hub');
   }
-  if (hash.startsWith('#/hub')) showHub('hub');
+  if (hash.startsWith('#/admin')) {
+    unlockAdmin();
+    history.replaceState(null, '', '#/');
+    if (!admin.active) { enterAdmin(() => route()); return; }
+    showHome();
+    return;
+  }
+  if (hash.startsWith('#/download')) showDownloads({ app, header, setView });
+  else if (hash.startsWith('#/hub')) showHub('hub');
   else if (hash.startsWith('#/wishlist')) showHub('wishlist');
   else showHome();
 }
 
 window.addEventListener('hashchange', () => {
-  if (!site || (site.locked && !key) || !nick.get()) return;
+  if (!ready || !site || (site.locked && !key) || !nick.get()) return;
   if (view && view.scrollKey) scrollMemory[view.scrollKey] = window.scrollY;
   route();
 });
@@ -291,7 +234,7 @@ function fatal(title, detail) {
   ])));
 }
 
-const logoSrc = () => site.logo || 'icon.svg';
+const logoSrc = () => overrides().logoUrl || site.logo || 'icon.svg';
 
 // ------------------------------------------------------------------ lock screen (nickname + team password)
 
@@ -356,29 +299,43 @@ function showLock(note = '') {
 // ------------------------------------------------------------------ shared header
 
 function header(active) {
+  const c = C();
+  const editing = isEditing();
   const name = nick.get() || 'Khách';
   const wishCount = wish.all().filter((s) => catalog.some((g) => g.slug === s)).length;
   const tab = (id, label, href) => h('a', { class: 'seg-item', href, 'aria-current': active === id ? 'page' : null, text: label });
-  return h('header', { class: 'top' }, h('div', { class: 'wrap top-row' }, [
-    h('a', { class: 'brand', href: '#/' }, [
-      h('img', { src: logoSrc(), alt: '' }),
-      h('div', { class: 'brand-text' }, [h('h1', { text: site.title }), site.subtitle ? h('p', { text: site.subtitle }) : null]),
+  const brandKids = [
+    h('img', { src: logoSrc(), alt: '' }),
+    h('div', { class: 'brand-text' }, [
+      ed('h1', 'title', { placeholder: 'Tên site' }),
+      ed('p', 'subtitle', { placeholder: 'Dòng mô tả ngắn' }),
     ]),
-    h('nav', { class: 'seg', 'aria-label': 'Điều hướng' }, [
-      tab('home', 'Giới thiệu', '#/'),
-      tab('hub', 'Game Hub', '#/hub'),
-      tab('wishlist', wishCount ? `Wishlist · ${wishCount}` : 'Wishlist', '#/wishlist'),
+  ];
+  return h('header', { class: 'top' }, [
+    admin.active ? adminBar() : null,
+    h('div', { class: 'wrap top-row' }, [
+      editing ? h('div', { class: 'brand' }, brandKids) : h('a', { class: 'brand', href: '#/' }, brandKids),
+      h('nav', { class: 'seg', 'aria-label': 'Điều hướng' }, [
+        tab('home', 'Giới thiệu', '#/'),
+        tab('hub', 'Game Hub', '#/hub'),
+        tab('wishlist', wishCount ? `Wishlist · ${wishCount}` : 'Wishlist', '#/wishlist'),
+        tab('download', 'Tải về GameKit', '#/download'),
+      ]),
+      h('span', { class: 'spacer' }),
+      h('div', { class: 'user' }, [
+        h('span', { class: 'avatar', style: { '--h': String(hueOf(name)) }, text: (name.split(/\s+/).pop()[0] || '?').toUpperCase() }),
+        h('div', { class: 'user-text' }, [h('strong', { text: name }), h('span', { text: admin.active ? 'Admin' : `${catalog.length} game` })]),
+        adminUnlocked() && !admin.active ? h('button', {
+          class: 'btn icon ghost', type: 'button', title: 'Chế độ admin', 'aria-label': 'Chế độ admin', html: icon('edit'),
+          onclick: () => enterAdmin(() => route()),
+        }) : null,
+        h('button', {
+          class: 'btn icon ghost', type: 'button', title: 'Đăng xuất trên máy này', 'aria-label': 'Đăng xuất', html: icon('logout'),
+          onclick: () => { if (admin.active && admin.dirty && !confirm('Bỏ các thay đổi chưa lưu?')) return; admin.active = false; forgetKey(); showLock(); },
+        }),
+      ]),
     ]),
-    h('span', { class: 'spacer' }),
-    h('div', { class: 'user' }, [
-      h('span', { class: 'avatar', style: { '--h': String(hueOf(name)) }, text: (name.split(/\s+/).pop()[0] || '?').toUpperCase() }),
-      h('div', { class: 'user-text' }, [h('strong', { text: name }), h('span', { text: `${catalog.length} game` })]),
-      h('button', {
-        class: 'btn icon ghost', type: 'button', title: 'Đăng xuất trên máy này', 'aria-label': 'Đăng xuất', html: icon('logout'),
-        onclick: () => { forgetKey(); showLock(); },
-      }),
-    ]),
-  ]));
+  ]);
 }
 
 // ------------------------------------------------------------------ tiles
@@ -434,27 +391,57 @@ function randomGame(exceptSlug) {
 // ------------------------------------------------------------------ home (giới thiệu)
 
 function showHome() {
-  observeTiles();
-  const photo = h('div', { class: 'team-photo' + (team.photo ? '' : ' empty') }, team.photo ? [] : [
-    h('span', { html: icon('users') }),
-    h('strong', { text: 'Ảnh team' }),
-    h('span', { text: 'Admin: thêm file brand/team.jpg vào repo' }),
-  ]);
-  if (team.photo) loadFile(team.photo, team.photoType).then((url) => url && photo.append(h('img', { src: url, alt: `Ảnh team ${site.title}` })));
+  const obs = observeTiles();
+  const c = C();
+  const editing = isEditing();
+  const t = c.team || {};
+
+  const photo = h('div', { class: 'team-photo' });
+  const setPhoto = (url) => {
+    photo.querySelectorAll('img, .photo-empty').forEach((n) => n.remove());
+    photo.classList.toggle('empty', !url);
+    if (url) photo.prepend(h('img', { src: url, alt: `Ảnh team ${c.title}` }));
+    else if (!editing) photo.prepend(h('div', { class: 'photo-empty' }, [h('span', { html: icon('users') }), h('strong', { text: 'Ảnh team' }), h('span', { text: 'Admin có thể kéo thả ảnh team vào đây' })]));
+  };
+  if (editing) dropzone(photo, 'photo', setPhoto);
+  const ov = overrides();
+  if (ov.photoUrl) setPhoto(ov.photoUrl);
+  else if (team.photo) { setPhoto(''); loadFile(team.photo, team.photoType).then((url) => { if (url && !overrides().photoUrl) setPhoto(url); }); }
+  else setPhoto('');
+
+  const stats = Array.isArray(t.stats) ? t.stats : [];
+  const statsEl = stats.length || editing ? h('dl', { class: 'hero-stats' + (editing ? ' editing' : '') }, [
+    ...stats.slice(0, 4).map((s, i) => h('div', { class: 'stat' }, [
+      ed('dt', `team.stats.${i}.value`, { placeholder: '12' }),
+      ed('dd', `team.stats.${i}.label`, { placeholder: 'thành viên' }),
+      editing ? btn('', 'x', { class: 'btn icon ghost sm stat-x', title: 'Xoá', onclick: () => { stats.splice(i, 1); markDirty(); showHome(); } }) : null,
+    ])),
+    editing && stats.length < 4 ? btn('Thêm số liệu', 'plus', { class: 'btn sm', onclick: () => { stats.push({ value: '', label: '' }); if (!t.stats) t.stats = stats; markDirty(); showHome(); } }) : null,
+  ]) : null;
+
+  let logoSlot = null;
+  if (editing) {
+    logoSlot = h('div', { class: 'logo-slot' });
+    const setLogo = (url) => { logoSlot.querySelector('img')?.remove(); logoSlot.prepend(h('img', { src: url || logoSrc(), alt: '' })); document.querySelectorAll('.brand img').forEach((i) => { i.src = url || logoSrc(); }); };
+    dropzone(logoSlot, 'logo', setLogo);
+    setLogo(overrides().logoUrl);
+  }
+
   const recent = [...catalog].filter((g) => g.status !== 'archived').sort((a, b) => (b.updated || '').localeCompare(a.updated || '')).slice(0, 10);
   const pick = randomGame();
 
   app.replaceChildren(header('home'), h('main', { class: 'wrap home' }, [
     h('section', { class: 'hero' }, [
       h('div', { class: 'hero-text' }, [
-        h('span', { class: 'eyebrow', text: team.eyebrow || 'Team prototype · nội bộ' }),
-        h('h2', { class: 'hero-title', text: team.name || site.title }),
-        h('p', { class: 'hero-intro', text: team.intro || site.subtitle || '' }),
+        ed('span', 'team.eyebrow', { class: 'eyebrow', placeholder: 'Dòng nhỏ phía trên tên' }),
+        ed('h2', 'team.name', { class: 'hero-title', placeholder: c.title, fallback: c.title }),
+        ed('p', 'team.intro', { class: 'hero-intro', multiline: true, placeholder: 'Vài câu giới thiệu team…' }),
         h('div', { class: 'hero-actions' }, [
           h('a', { class: 'btn primary lg', href: '#/hub', html: `${icon('gamepad')}<span>Vào Game Hub</span>` }),
           pick ? h('a', { class: 'btn lg', href: `#/play/${pick.slug}`, html: `${icon('dice')}<span>Chơi ngẫu nhiên</span>` }) : null,
         ]),
-        Array.isArray(team.stats) && team.stats.length ? h('dl', { class: 'hero-stats' }, team.stats.slice(0, 4).flatMap((s) => [h('dt', { text: String(s.value) }), h('dd', { text: String(s.label) })])) : null,
+        statsEl,
+        logoSlot,
       ]),
       photo,
     ]),
@@ -467,7 +454,7 @@ function showHome() {
     ]) : emptyState(),
   ]));
   requestAnimationFrame(() => window.scrollTo(0, scrollMemory.home || 0));
-  setView({ name: 'home', scrollKey: 'home', destroy() { if (tileObserver) tileObserver.disconnect(); } });
+  setView({ name: 'home', scrollKey: 'home', destroy() { if (obs) obs.disconnect(); } });
 }
 
 // ------------------------------------------------------------------ game hub
@@ -475,7 +462,7 @@ function showHome() {
 const filters = { q: '', status: '', tag: '', sort: 'featured' };
 
 function showHub(mode) {
-  observeTiles();
+  const obs = observeTiles();
   const searchInput = h('input', {
     class: 'input', id: 'search', type: 'search', placeholder: 'Tìm theo tên game, người làm, nhãn…', value: filters.q, 'aria-label': 'Tìm game',
     oninput: (e) => { filters.q = e.target.value; update(); },
@@ -547,7 +534,7 @@ function showHub(mode) {
 
   update();
   requestAnimationFrame(() => window.scrollTo(0, scrollMemory[mode] || 0));
-  setView({ name: mode, scrollKey: mode, destroy() { if (tileObserver) tileObserver.disconnect(); } });
+  setView({ name: mode, scrollKey: mode, destroy() { if (obs) obs.disconnect(); } });
 }
 
 function emptyState() {

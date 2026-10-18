@@ -10,9 +10,21 @@
     "name": "NOC Game",
     "intro": "Nơi team đưa các bản thử game HTML5 lên để cả nhà bấm vào chơi ngay, góp ý và chọn ra ý tưởng đáng làm tiếp.",
     "stats": [
-      { "value": "12", "label": "thành viên" },
-      { "value": "2026", "label": "thành lập" }
+      {
+        "value": "12",
+        "label": "thành viên"
+      },
+      {
+        "value": "2026",
+        "label": "thành lập"
+      }
     ]
   },
-  "featured": ["tangle-3"]
+  "featured": [
+    "tangle-3"
+  ],
+  "admin": {
+    "repo": "nocgamesorigin-ale/prototype-gallery",
+    "branch": "main"
+  }
 }

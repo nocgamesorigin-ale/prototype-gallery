@@ -61,8 +61,10 @@ const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 async function findBrand(base) {
   let files = [];
   try { files = await readdir(path.join(root, 'brand')); } catch { return null; }
-  const name = files.find((f) => path.parse(f).name.toLowerCase() === base && IMAGE_TYPES[path.extname(f).toLowerCase()]);
-  if (!name) return null;
+  const matches = files.filter((f) => path.parse(f).name.toLowerCase() === base && IMAGE_TYPES[path.extname(f).toLowerCase()]);
+  if (!matches.length) return null;
+  // several formats (team.png + team.jpg)? prefer the one the admin page writes, then the newest
+  const name = matches.find((f) => f.toLowerCase() === (base === 'logo' ? 'logo.png' : 'team.jpg')) || matches[0];
   const file = path.join(root, 'brand', name);
   const size = (await stat(file)).size;
   if (size > 5 * 1024 * 1024) { problems.push(`brand/${name} lớn hơn 5 MB — hãy nén ảnh lại.`); return null; }
@@ -104,7 +106,13 @@ for (const g of games) {
 }
 for (const s of featured) if (!catalog.some((g) => g.slug === s)) problems.push(`gallery.config.json: "featured" có "${s}" nhưng không có game nào tên đó.`);
 
-const catalogJson = JSON.stringify({ v: FORMAT_VERSION, games: catalog, team, featured });
+// Page content edited from the admin mode (Tải về GameKit, hướng dẫn, Q&A). Encrypted with the catalog.
+const pages = {};
+for (const k of ['downloads', 'install', 'guide', 'mobile', 'faq']) if (config[k] !== undefined) pages[k] = config[k];
+if (JSON.stringify(pages).length > 200000) problems.push('gallery.config.json: nội dung trang quá dài (> 200 KB).');
+const adminInfo = { repo: String((config.admin && config.admin.repo) || process.env.GITHUB_REPOSITORY || ''), branch: String((config.admin && config.admin.branch) || 'main') };
+
+const catalogJson = JSON.stringify({ v: FORMAT_VERSION, games: catalog, team, featured, ...pages, admin: adminInfo });
 await writeFile(path.join(outDir, 'data', 'catalog.bin'), locked ? await encryptText(key, catalogJson) : Buffer.from(catalogJson));
 
 const site = {
