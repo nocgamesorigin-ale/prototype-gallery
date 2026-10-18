@@ -26,5 +26,125 @@
   "admin": {
     "repo": "nocgamesorigin-ale/prototype-gallery",
     "branch": "main"
-  }
+  },
+  "install": {
+    "windows": [
+      {
+        "text": "Gửi **username GitHub** cho admin để được mời vào repo gallery, rồi bấm **Accept** trong email mời của GitHub. Chưa accept thì không submit được.",
+        "code": ""
+      },
+      {
+        "text": "Cài **VS Code** (code.visualstudio.com), **Git** (git-scm.com, giữ mặc định khi cài) và **Node.js 20 LTS** trở lên (nodejs.org).",
+        "code": ""
+      },
+      {
+        "text": "Mở **PowerShell**, đặt tên hiện trên gallery và tải repo gallery về thư mục Downloads:",
+        "code": "git config --global user.name \"Tên của bạn\"\ncd $HOME\\Downloads\ngit clone https://github.com/nocgamesorigin-ale/prototype-gallery.git"
+      },
+      {
+        "text": "Lần đầu Git cần đăng nhập, trình duyệt sẽ mở trang **GitHub** → bấm **Authorize**. Không cần làm gì thêm.",
+        "code": ""
+      },
+      {
+        "text": "Mở VS Code, vào **Extensions** (`Ctrl+Shift+X` / `Cmd+Shift+X`) → **⋯** → **Install from VSIX…**, chọn lần lượt 2 file **.vsix** đã tải ở mục **01 Tải về**: **GameKit** và **GameKit Submit**. Xong thì `Ctrl/Cmd+Shift+P` → **Developer: Reload Window**.",
+        "code": ""
+      }
+    ],
+    "macos": [
+      {
+        "text": "Gửi **username GitHub** cho admin để được mời vào repo gallery, rồi bấm **Accept** trong email mời của GitHub. Chưa accept thì không submit được.",
+        "code": ""
+      },
+      {
+        "text": "Cài **VS Code** (code.visualstudio.com) và **Node.js 20 LTS** trở lên (nodejs.org). Cài **Git** bằng lệnh sau trong **Terminal**:",
+        "code": "xcode-select --install"
+      },
+      {
+        "text": "Cài **GitHub CLI** (bản .pkg ở cli.github.com) rồi đăng nhập GitHub, chọn **GitHub.com → HTTPS → Login with a web browser**:",
+        "code": "gh auth login\ngh auth setup-git"
+      },
+      {
+        "text": "Đặt tên hiện trên gallery và tải repo gallery về thư mục Downloads:",
+        "code": "git config --global user.name \"Tên của bạn\"\ncd ~/Downloads\ngit clone https://github.com/nocgamesorigin-ale/prototype-gallery.git"
+      },
+      {
+        "text": "Mở VS Code, vào **Extensions** (`Ctrl+Shift+X` / `Cmd+Shift+X`) → **⋯** → **Install from VSIX…**, chọn lần lượt 2 file **.vsix** đã tải ở mục **01 Tải về**: **GameKit** và **GameKit Submit**. Xong thì `Ctrl/Cmd+Shift+P` → **Developer: Reload Window**.",
+        "code": ""
+      }
+    ],
+    "linux": [
+      {
+        "text": "Gửi **username GitHub** cho admin để được mời vào repo gallery, rồi bấm **Accept** trong email mời của GitHub. Chưa accept thì không submit được.",
+        "code": ""
+      },
+      {
+        "text": "Cài **VS Code** (bản .deb ở code.visualstudio.com), **Node.js 20 LTS** trở lên (nodejs.org), cùng **Git** và **GitHub CLI**:",
+        "code": "sudo apt install git gh"
+      },
+      {
+        "text": "Đăng nhập GitHub, chọn **GitHub.com → HTTPS → Login with a web browser**:",
+        "code": "gh auth login\ngh auth setup-git"
+      },
+      {
+        "text": "Đặt tên hiện trên gallery và tải repo gallery về thư mục Downloads:",
+        "code": "git config --global user.name \"Tên của bạn\"\ncd ~/Downloads\ngit clone https://github.com/nocgamesorigin-ale/prototype-gallery.git"
+      },
+      {
+        "text": "Mở VS Code, vào **Extensions** (`Ctrl+Shift+X` / `Cmd+Shift+X`) → **⋯** → **Install from VSIX…**, chọn lần lượt 2 file **.vsix** đã tải ở mục **01 Tải về**: **GameKit** và **GameKit Submit**. Xong thì `Ctrl/Cmd+Shift+P` → **Developer: Reload Window**.",
+        "code": ""
+      }
+    ]
+  },
+  "guide": [
+    {
+      "text": "Trong VS Code, bấm icon **GameKit** ở thanh bên trái. Ở khung **Projects**, chọn **Tạo game mới** hoặc **Mở thư mục game** để mở game của bạn.",
+      "code": ""
+    },
+    {
+      "text": "Bấm **Mở xem trước game** (icon điện thoại cạnh project) để chơi thử trong khung điện thoại. Bấm **↻** trên thanh công cụ preview nếu muốn tải lại.",
+      "code": ""
+    },
+    {
+      "text": "Khi muốn đưa lên gallery: bấm nút cam **🚀 Submit game** ở góc dưới màn Preview, hoặc icon đám mây **☁↑** cạnh tên project trong **Projects**.",
+      "code": ""
+    },
+    {
+      "text": "Ở ô **Đưa lên như**: lần đầu chọn **Game mới**. Chỉ chọn **Thay thế** khi muốn cập nhật đúng game của bạn đã có trên gallery, chọn nhầm sẽ ghi đè game đó.",
+      "code": ""
+    },
+    {
+      "text": "Điền **tên game** (bắt buộc, không trùng game khác; \"Tangle 3\" và \"tangle-3\" bị coi là trùng), mô tả, icon **512×512** và banner **1024×512** (PNG/JPG/WebP, ≤ 2 MB).",
+      "code": ""
+    },
+    {
+      "text": "Bấm **Submit** và chờ log chạy xong: game được build, đưa vào gallery rồi push lên GitHub. Khoảng **1–2 phút** sau game có trên **Game Hub**.",
+      "code": ""
+    },
+    {
+      "text": "Lần sau sửa game, cứ submit lại từ đúng project đó: popup tự chọn **Thay thế** game cũ, bản trên gallery được cập nhật.",
+      "code": ""
+    },
+    {
+      "text": "Repo gallery không nằm ở **Downloads/prototype-gallery**? Vào **Settings**, tìm **GameKit — Submit game → Repo Path** và sửa đường dẫn.",
+      "code": ""
+    }
+  ],
+  "mobile": [
+    {
+      "text": "Mở game trên máy tính, bấm nút **QR** (Mở trên điện thoại) ở góc phải thanh công cụ phía trên.",
+      "code": ""
+    },
+    {
+      "text": "Quét mã bằng **camera** điện thoại, bấm vào link hiện ra.",
+      "code": ""
+    },
+    {
+      "text": "Lần đầu mở, nhập **tên / biệt danh** và **mật khẩu team**. Giữ tick **Ghi nhớ trên máy này** để lần sau không phải nhập lại.",
+      "code": ""
+    },
+    {
+      "text": "Trên điện thoại game mở tràn màn hình. Game chơi ngang sẽ nhắc bạn **xoay ngang** máy.",
+      "code": ""
+    }
+  ]
 }
